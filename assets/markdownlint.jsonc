@@ -1,0 +1,64 @@
+{
+  //
+  // markdownlint configuration for redStack
+  //
+  // Standard markdownlint rules assume plain CommonMark. GitHub Flavored Markdown (GFM)
+  // extends this with HTML rendering, alerts, and looser structural conventions that
+  // intentionally violate several default rules. The suppressions below exist because
+  // this README is written for GitHub rendering, not a static site linter.
+  //
+  // GitHub Markdown vs. standard Markdown - key differences:
+  //
+  //   Inline HTML  GitHub renders a curated subset of HTML tags directly in Markdown.
+  //                <details>/<summary> (collapsible sections), <kbd> (keyboard keys),
+  //                and <br> are all valid and commonly used in READMEs. Standard
+  //                Markdown parsers either strip or escape these entirely.
+  //
+  //   Alerts       GitHub adds blockquote-based alert syntax (> [!NOTE], > [!WARNING],
+  //                > [!IMPORTANT], > [!CAUTION]). These render as styled callout boxes
+  //                on GitHub but are treated as plain blockquotes everywhere else.
+  //                The blank-line-in-blockquote rule fires on multi-paragraph alerts.
+  //
+  //   Line length  GFM renders long lines as wrapped prose. The 80-char limit is a
+  //                terminal/print convention that has no effect on how GitHub renders
+  //                the output. Enforcing it on a README would break URLs, code paths,
+  //                and table cells without improving readability anywhere.
+  //
+
+  // MD001 - Heading levels should only increment by one level at a time.
+  // Suppressed because section nesting in this README uses heading levels
+  // contextually (e.g. jumping from H2 to H4 inside a details block) to
+  // match the visual hierarchy GitHub renders, not a strict outline structure.
+  "MD001": false,
+
+  // MD013 - Line length limit (default: 80 characters).
+  // Suppressed because GFM wraps long lines automatically. Enforcing 80-char
+  // wrapping would break inline URLs, Terraform variable examples, and table
+  // rows with no improvement to how the README renders on GitHub.
+  "MD013": false,
+
+  // MD028 - Blank line inside blockquote.
+  // Suppressed because GitHub alert syntax (> [!NOTE] etc.) uses blank lines
+  // between alert type and body. These render correctly on GitHub but trigger
+  // this rule since standard Markdown does not define multi-paragraph alerts.
+  "MD028": false,
+
+  // MD033 - Inline HTML not allowed.
+  // Suppressed because this README uses GitHub-supported HTML: <details> and
+  // <summary> for collapsible sections. GitHub renders these natively; they
+  // are intentional, not accidents.
+  "MD033": false,
+
+  // MD036 - Emphasis used instead of a heading.
+  // Suppressed because bold (**text**) is used for labels and field names
+  // inside lists and blockquotes where adding a heading would be semantically
+  // incorrect and would break the document outline.
+  "MD036": false,
+
+  // MD051 - Link fragments must match a heading anchor.
+  // Suppressed because GitHub auto-generates heading anchors using its own
+  // slugification rules (lowercased, spaces to hyphens, punctuation stripped)
+  // which differ from what markdownlint resolves locally. Fragment links that
+  // work correctly on GitHub are flagged as broken by this rule.
+  "MD051": false
+}

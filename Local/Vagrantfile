@@ -1,0 +1,329 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+#
+# Vagrantfile for redStack — Boot-to-Breach Lab on Local VMs
+#
+# Deploys 7 VMs across two virtual networks:
+#   Team Network (10.50.0.0/16)  — mythic, guacamole, windows, kali, sliver, havoc
+#   Redirect Network (10.60.0.0/16) — redirector (simulates external VPS)
+#
+# Required plugins:
+#   vagrant-vbguest: auto-installs VirtualBox Guest Additions
+#   vagrant-hostmanager: optional, auto-manages /etc/hosts
+#
+# Prerequisites:
+#   - VirtualBox 7.0+
+#   - Vagrant 2.3+
+#   - 25GB+ free RAM, 150GB+ free disk
+
+Vagrant.configure("2") do |config|
+  # ==========================================================================
+  # GLOBAL SETTINGS
+  # ==========================================================================
+
+  # Disable default synced folder (not needed for most VMs)
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+
+  # Auto-update VirtualBox Guest Additions
+  config.vbguest.auto_update = true if Vagrant.has_plugin?("vagrant-vbguest")
+
+  # Auto-manage /etc/hosts if plugin is installed
+  if Vagrant.has_plugin?("vagrant-hostmanager")
+    config.hostmanager.enabled = true
+    config.hostmanager.manage_host = true
+    config.hostmanager.manage_guest = true
+  end
+
+  # Common settings for all VMs
+  config.ssh.insert_key = false
+  config.ssh.private_key_path = ["~/.vagrant.d/insecure_private_key"]
+  config.vm.provision "file", source: "~/.vagrant.d/insecure_private_key",
+    destination: "/home/vagrant/.ssh/authorized_keys"
+
+  # ==========================================================================
+  # VARIABLES — Adjust these to match your hardware
+  # ==========================================================================
+
+  # Shared SSH password for all lab Linux VMs (used by Guacamole)
+  $ssh_password = "redStack2024!"
+
+  # Your LAN IP for redirector callback testing (optional)
+  # Set this if you want to test C2 callbacks from other machines on your LAN
+  $your_lan_ip = ""
+
+  # Team Network CIDR
+  $team_cidr = "10.50.0.0/16"
+
+  # Redirector Network CIDR
+  $redirector_cidr = "10.60.0.0/16"
+
+  # RAM/CPU per VM — adjust based on your hardware
+  $ram_adjustments = {
+    "mythic"      => { cpus: 2, memory: 4096 },
+    "guacamole"   => { cpus: 2, memory: 2048 },
+    "windows"     => { cpus: 4, memory: 8192 },
+    "redirector"  => { cpus: 1, memory: 1024 },
+    "sliver"      => { cpus: 2, memory: 2048 },
+    "havoc"       => { cpus: 2, memory: 4096 },
+    "kali"        => { cpus: 2, memory: 4096 },
+  }
+
+  # ==========================================================================
+  # VM DEFINITIONS
+  # ==========================================================================
+
+  # --- MYTHIC C2 Server ---
+  config.vm.define "mythic", primary: true do |m|
+    m.vm.box = "debian/bookworm64"
+    m.vm.hostname = "mythic"
+
+    # Team network
+    m.vm.network "private_network", ip: "10.50.0.10",
+      virtualbox__intnet: "redstack-team"
+
+    # Port forwarding for Mythic Web UI
+    m.vm.network "forwarded_port", guest: 7443, host: 7443, auto_correct: true
+    m.vm.network "forwarded_port", guest: 7444, host: 7444, auto_correct: true
+
+    m.vm.provider "virtualbox" do |vb|
+      vb.name = "redstack_mythic"
+      vb.cpus = $ram_adjustments["mythic"][:cpus]
+      vb.memory = $ram_adjustments["mythic"][:memory]
+      vb.linked_clone = true
+    end
+
+    m.vm.provision "shell", path: "setup_scripts/mythic_setup.sh",
+      env: {
+        "LOCAL_PUB_IP" => $your_lan_ip,
+        "ENABLE_AUTOSTART" => "true",
+        "SSH_PASSWORD" => $ssh_password,
+        "VPC_CIDR" => $team_cidr,
+        "REDIRECTOR_VPC_CIDR" => $redirector_cidr,
+        "MYTHIC_ADMIN_PASSWORD" => $ssh_password,
+        "MYTHIC_PRIVATE_IP" => "10.50.0.10",
+        "GUACAMOLE_PRIVATE_IP" => "10.50.0.20",
+        "SLIVER_PRIVATE_IP" => "10.50.0.11",
+        "HAVOC_PRIVATE_IP" => "10.50.0.12",
+        "REDIRECTOR_PRIVATE_IP" => "10.60.0.10",
+        "WINDOWS_PRIVATE_IP" => "10.50.0.30",
+        "KALI_PRIVATE_IP" => "10.50.0.40",
+      }
+  end
+
+  # --- SLIVER C2 Server ---
+  config.vm.define "sliver" do |s|
+    s.vm.box = "debian/bookworm64"
+    s.vm.hostname = "sliver"
+
+    s.vm.network "private_network", ip: "10.50.0.11",
+      virtualbox__intnet: "redstack-team"
+
+    s.vm.provider "virtualbox" do |vb|
+      vb.name = "redstack_sliver"
+      vb.cpus = $ram_adjustments["sliver"][:cpus]
+      vb.memory = $ram_adjustments["sliver"][:memory]
+      vb.linked_clone = true
+    end
+
+    s.vm.provision "shell", path: "setup_scripts/sliver_setup.sh",
+      env: {
+        "SSH_PASSWORD" => $ssh_password,
+        "REDIRECTOR_VPC_CIDR" => $redirector_cidr,
+        "SLIVER_PRIVATE_IP" => "10.50.0.11",
+        "GUACAMOLE_PRIVATE_IP" => "10.50.0.20",
+        "MYTHIC_PRIVATE_IP" => "10.50.0.10",
+        "HAVOC_PRIVATE_IP" => "10.50.0.12",
+        "REDIRECTOR_PRIVATE_IP" => "10.60.0.10",
+        "WINDOWS_PRIVATE_IP" => "10.50.0.30",
+        "KALI_PRIVATE_IP" => "10.50.0.40",
+        "C2_HEADER_NAME" => "X-Request-ID",
+        "C2_HEADER_VALUE" => "redstack-local-dev",
+      }
+  end
+
+  # --- HAVOC C2 Server ---
+  config.vm.define "havoc" do |h|
+    h.vm.box = "debian/bookworm64"
+    h.vm.hostname = "havoc"
+
+    h.vm.network "private_network", ip: "10.50.0.12",
+      virtualbox__intnet: "redstack-team"
+
+    h.vm.provider "virtualbox" do |vb|
+      vb.name = "redstack_havoc"
+      vb.cpus = $ram_adjustments["havoc"][:cpus]
+      vb.memory = $ram_adjustments["havoc"][:memory]
+      vb.linked_clone = true
+    end
+
+    h.vm.provision "shell", path: "setup_scripts/havoc_setup.sh",
+      env: {
+        "SSH_PASSWORD" => $ssh_password,
+        "MAIN_VPC_CIDR" => $team_cidr,
+        "REDIRECTOR_VPC_CIDR" => $redirector_cidr,
+        "HAVOC_PRIVATE_IP" => "10.50.0.12",
+        "GUACAMOLE_PRIVATE_IP" => "10.50.0.20",
+        "MYTHIC_PRIVATE_IP" => "10.50.0.10",
+        "SLIVER_PRIVATE_IP" => "10.50.0.11",
+        "REDIRECTOR_PRIVATE_IP" => "10.60.0.10",
+        "WINDOWS_PRIVATE_IP" => "10.50.0.30",
+        "KALI_PRIVATE_IP" => "10.50.0.40",
+      }
+  end
+
+  # --- REDIRECTOR (Apache reverse proxy in separate network) ---
+  config.vm.define "redirector" do |r|
+    r.vm.box = "debian/bookworm64"
+    r.vm.hostname = "redirector"
+
+    # Redirector is on a separate network (simulates external VPS)
+    r.vm.network "private_network", ip: "10.60.0.10",
+      virtualbox__intnet: "redstack-redirect"
+
+    # Port forwarding for C2 callbacks from host
+    r.vm.network "forwarded_port", guest: 80, host: 8080, auto_correct: true
+    r.vm.network "forwarded_port", guest: 443, host: 8443, auto_correct: true
+
+    r.vm.provider "virtualbox" do |vb|
+      vb.name = "redstack_redirector"
+      vb.cpus = $ram_adjustments["redirector"][:cpus]
+      vb.memory = $ram_adjustments["redirector"][:memory]
+      vb.linked_clone = true
+    end
+
+    r.vm.provision "shell", path: "setup_scripts/redirector_setup_local.sh",
+      env: {
+        "SSH_PASSWORD" => $ssh_password,
+        "MYTHIC_PRIVATE_IP" => "10.50.0.10",
+        "SLIVER_PRIVATE_IP" => "10.50.0.11",
+        "HAVOC_PRIVATE_IP" => "10.50.0.12",
+        "GUACAMOLE_PRIVATE_IP" => "10.50.0.20",
+        "WINDOWS_PRIVATE_IP" => "10.50.0.30",
+        "KALI_PRIVATE_IP" => "10.50.0.40",
+        "DOMAIN_NAME" => "",
+        "MYTHIC_URI_PREFIX" => "/cdn/media/stream",
+        "SLIVER_URI_PREFIX" => "/cloud/storage/objects",
+        "HAVOC_URI_PREFIX" => "/edge/cache/assets",
+        "C2_HEADER_NAME" => "X-Request-ID",
+        "C2_HEADER_VALUE" => "redstack-local-dev",
+        "ENABLE_VPN" => "false",
+        "ENABLE_REDIRECT_RULES" => "true",
+        "MAIN_VPC_CIDR" => $team_cidr,
+        "REDIRECTOR_PUBLIC_IP" => "127.0.0.1",  # Accessed via localhost port forward
+      }
+  end
+
+  # --- GUACAMOLE Portal ---
+  config.vm.define "guacamole" do |g|
+    g.vm.box = "debian/bookworm64"
+    g.vm.hostname = "guac"
+
+    g.vm.network "private_network", ip: "10.50.0.20",
+      virtualbox__intnet: "redstack-team"
+
+    # Port forwarding: host:8443 -> guacamole:443 (NGINX)
+    g.vm.network "forwarded_port", guest: 443, host: 8443, auto_correct: true
+    g.vm.network "forwarded_port", guest: 80, host: 8081, auto_correct: true
+
+    # Synced folder for Guacamole drive share
+    g.vm.synced_folder "./guac_share", "/drive", type: "virtualbox"
+
+    g.vm.provider "virtualbox" do |vb|
+      vb.name = "redstack_guacamole"
+      vb.cpus = $ram_adjustments["guacamole"][:cpus]
+      vb.memory = $ram_adjustments["guacamole"][:memory]
+      vb.linked_clone = true
+    end
+
+    g.vm.provision "shell", path: "setup_scripts/guacamole_setup_local.sh",
+      env: {
+        "GUAC_ADMIN_PASSWORD" => $ssh_password,
+        "SSH_PASSWORD" => $ssh_password,
+        "WINDOWS_PRIVATE_IP" => "10.50.0.30",
+        "WINDOWS_USERNAME" => "Administrator",
+        "WINDOWS_PASSWORD" => $ssh_password,
+        "MYTHIC_PRIVATE_IP" => "10.50.0.10",
+        "SLIVER_PRIVATE_IP" => "10.50.0.11",
+        "HAVOC_PRIVATE_IP" => "10.50.0.12",
+        "REDIRECTOR_PRIVATE_IP" => "10.60.0.10",
+        "GUACAMOLE_PRIVATE_IP" => "10.50.0.20",
+        "KALI_PRIVATE_IP" => "10.50.0.40",
+        "KALI_DEPLOYMENT_MODE" => "headless",
+        "GUAC_PUBLIC_IP" => "127.0.0.1",
+      }
+  end
+
+  # --- WINDOWS Workstation ---
+  config.vm.define "windows" do |w|
+    w.vm.box = "gusztavvargadr/windows-server-2022-standard"
+    w.vm.hostname = "windows"
+
+    w.vm.network "private_network", ip: "10.50.0.30",
+      virtualbox__intnet: "redstack-team"
+
+    # RDP port forwarding
+    w.vm.network "forwarded_port", guest: 3389, host: 3389, auto_correct: true
+
+    w.vm.provider "virtualbox" do |vb|
+      vb.name = "redstack_windows"
+      vb.cpus = $ram_adjustments["windows"][:cpus]
+      vb.memory = $ram_adjustments["windows"][:memory]
+      vb.linked_clone = true
+      vb.gui = false
+    end
+
+    # Windows provisioning via shell + PowerShell
+    w.vm.provision "shell", inline: <<-SHELL
+      # Add hosts entries
+      $hosts = @"
+# redStack lab hosts
+10.50.0.20    guac
+10.50.0.10    mythic
+10.50.0.11    sliver
+10.50.0.12    havoc
+10.60.0.10    redirector
+10.50.0.40    kali
+"@
+      Add-Content -Path "$env:windir\\System32\\drivers\\etc\\hosts" -Value "`r`n$hosts" -Force
+
+      # Set admin password
+      net user Administrator "#{$ssh_password}"
+
+      # Disable Windows Defender (lab environment)
+      Set-MpPreference -DisableRealtimeMonitoring $true
+
+      # Enable RDP
+      Set-ItemProperty -Path 'HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server' -Name "fDenyTSConnections" -Value 0
+      Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+    SHELL
+  end
+
+  # --- KALI Workstation ---
+  config.vm.define "kali" do |k|
+    k.vm.box = "kalilinux/rolling"
+    k.vm.hostname = "kali"
+
+    k.vm.network "private_network", ip: "10.50.0.40",
+      virtualbox__intnet: "redstack-team"
+
+    k.vm.provider "virtualbox" do |vb|
+      vb.name = "redstack_kali"
+      vb.cpus = $ram_adjustments["kali"][:cpus]
+      vb.memory = $ram_adjustments["kali"][:memory]
+      vb.linked_clone = true
+    end
+
+    k.vm.provision "shell", path: "setup_scripts/kali_setup.sh",
+      env: {
+        "SSH_PASSWORD" => $ssh_password,
+        "KALI_MODE" => "headless",
+        "KALI_PRIVATE_IP" => "10.50.0.40",
+        "GUACAMOLE_PRIVATE_IP" => "10.50.0.20",
+        "MYTHIC_PRIVATE_IP" => "10.50.0.10",
+        "SLIVER_PRIVATE_IP" => "10.50.0.11",
+        "HAVOC_PRIVATE_IP" => "10.50.0.12",
+        "REDIRECTOR_PRIVATE_IP" => "10.60.0.10",
+        "WINDOWS_PRIVATE_IP" => "10.50.0.30",
+      }
+  end
+end

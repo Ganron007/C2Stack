@@ -1,0 +1,236 @@
+<script>
+REM ============================================================================
+REM PHASE 1: Disable Windows Defender via batch (bypasses AMSI)
+REM AMSI scans PowerShell scripts at parse time and blocks scripts that contain
+REM security-disabling commands. Batch scripts are not subject to AMSI scanning.
+REM ============================================================================
+
+REM Disable Defender via registry
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender" /v DisableAntiSpyware /t REG_DWORD /d 1 /f
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" /v DisableRealtimeMonitoring /t REG_DWORD /d 1 /f
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" /v DisableBehaviorMonitoring /t REG_DWORD /d 1 /f
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" /v DisableIOAVProtection /t REG_DWORD /d 1 /f
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" /v DisableScanOnRealtimeEnable /t REG_DWORD /d 1 /f
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection" /v DisableScriptScanning /t REG_DWORD /d 1 /f
+
+REM Stop Defender service
+sc stop WinDefend
+sc config WinDefend start= disabled
+
+REM Disable Windows Firewall
+netsh advfirewall set allprofiles state off
+
+REM Enable RDP
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" /v fDenyTSConnections /t REG_DWORD /d 0 /f
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v UserAuthentication /t REG_DWORD /d 0 /f
+netsh advfirewall firewall set rule group="Remote Desktop" new enable=yes
+
+echo [*] Phase 1 complete - Defender disabled, firewall off, RDP enabled
+</script>
+<powershell>
+# windows_setup.ps1 - Phase 2: Main setup (runs after Defender is disabled)
+
+# Logging
+Start-Transcript -Path "C:\Windows\Temp\user-data.log" -Append
+
+Write-Host "===== Windows Client Setup Started $(Get-Date) ====="
+
+# Set hostname
+Rename-Computer -NewName "windows" -Force
+
+# Configure hosts file for lab machines
+$hostsContent = @"
+
+__HOSTS_ENTRIES__
+"@
+Add-Content -Path "C:\Windows\System32\drivers\etc\hosts" -Value $hostsContent
+
+# Disable IE Enhanced Security (for easier web browsing in training)
+$AdminKey = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A7-37EF-4b3f-8CFC-4F3A74704073}"
+$UserKey = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{A509B1A8-37EF-4b3f-8CFC-4F3A74704073}"
+Set-ItemProperty -Path $AdminKey -Name "IsInstalled" -Value 0 -Force
+Set-ItemProperty -Path $UserKey -Name "IsInstalled" -Value 0 -Force
+
+# Reinforce Defender disable via PowerShell (belt and suspenders)
+Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
+Set-MpPreference -DisableIOAVProtection $true -ErrorAction SilentlyContinue
+Set-MpPreference -DisableBehaviorMonitoring $true -ErrorAction SilentlyContinue
+Set-MpPreference -DisableScriptScanning $true -ErrorAction SilentlyContinue
+Add-MpPreference -ExclusionPath "C:\" -ErrorAction SilentlyContinue
+
+# Install Chocolatey package manager
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+$env:chocolateyUseWindowsCompression = 'true'
+Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+
+# Refresh PATH to include Chocolatey
+$env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
+
+& "$env:ProgramData\chocolatey\bin\choco.exe" install chromium -y --no-progress
+& "$env:ProgramData\chocolatey\bin\choco.exe" install vscode -y --no-progress
+& "$env:ProgramData\chocolatey\bin\choco.exe" install mobaxterm -y --no-progress
+& "$env:ProgramData\chocolatey\bin\choco.exe" install 7zip -y --no-progress
+& "$env:ProgramData\chocolatey\bin\choco.exe" install git -y --no-progress
+
+# ============================================================================
+# PRE-CONFIGURE MOBAXTERM SESSIONS
+# ============================================================================
+
+$mobaDir = "C:\Users\Administrator\AppData\Roaming\MobaXterm"
+New-Item -ItemType Directory -Force -Path $mobaDir | Out-Null
+
+# INI structure derived from a fully-initialized MobaXterm installation.
+# [Misc] must include LocalShell to suppress the first-run theme/setup wizard.
+# Sessions use '= #109#' format (space before #109# required for sessions to be recognized).
+$mobaIni = @'
+[Misc]
+PasswordsInRegistry=1
+LocalShell=Bash (64 bit)
+SlashDir=_AppDataDir_\MobaXterm\slash
+HomeDir=_AppDataDir_\MobaXterm\home
+RDMSessionsAlreadyImported=1
+SkinSat=80
+SkinName3=Windows dark theme
+DefTextEditor=<MobaTextEditor>
+StorePasswords=Ask
+AllowMultiInstances=0
+
+[SSH]
+SFTPShowDotFiles=1
+SFTPAsciiMode=0
+MonitorHost=1
+MonitorCPU=1
+MonitorRAM=1
+MonitorNetUp=1
+MonitorNetDown=1
+MonitorProcesses=0
+MonitoFDs=0
+MonitorUptime=1
+MonitorUsers=1
+MonitorPartitions=1
+MonitorNfsPartitions=0
+MonitorNetstat=0
+UseInternalMobAgent=0
+UseExternalPageant=0
+UseExternalWindowsAgent=0
+ValidateEachAgentRequest=0
+MobAgentKeys=
+DisplaySSHBanner=1
+UseNewMoTTY=1
+StrictHostKeyChecking=1
+GwUse2factor=0
+AutoStartSSHGUI=1
+SSHKeepAlive2=0
+EnableSFTP=1
+RemoteMonitoring=1
+ScpPreservesDates=0
+UseGSSAPI=1
+KrbDomain=
+GSSAPICustomLib=
+GSSAPILibNumber=0
+DefaultLoginName=
+
+[Display]
+SidebarRight=0
+C10Checked=1
+C11Checked=1
+C12Checked=1
+C13Checked=0
+C14Checked=0
+VisibleTabNum=1
+VisibleTabClose=1
+MenuAndButtons=2
+BtnType2=2
+S3Checked=0
+DisableQuickConnect=0
+IconsTheme=0
+RoundedTabs=1
+GraphicCache=1
+
+[Bookmarks]
+SubRep=redStack Sessions
+ImgNum=42
+Mythic C2 (SSH)= #109#0%mythic%22%admin%%-1%-1%%%%%0%-1%0%%%-1%-1%0%0%%1080%%0%0%1%%0%%%%0%-1%-1%0%%%0#MobaFont%10%0%0%-1%15%236,236,236%30,30,30%180,180,192%0%-1%0%%xterm%-1%0%_Std_Colors_0_%80%24%0%1%-1%<none>%%0%0%-1%0%#0# #-1
+Sliver C2 (SSH)= #109#0%sliver%22%admin%%-1%-1%%%%%0%-1%0%%%-1%-1%0%0%%1080%%0%0%1%%0%%%%0%-1%-1%0%%%0#MobaFont%10%0%0%-1%15%236,236,236%30,30,30%180,180,192%0%-1%0%%xterm%-1%0%_Std_Colors_0_%80%24%0%1%-1%<none>%%0%0%-1%0%#0# #-1
+Havoc C2 (SSH)= #109#0%havoc%22%admin%%-1%-1%%%%%0%-1%0%%%-1%-1%0%0%%1080%%0%0%1%%0%%%%0%-1%-1%0%%%0#MobaFont%10%0%0%-1%15%236,236,236%30,30,30%180,180,192%0%-1%0%%xterm%-1%0%_Std_Colors_0_%80%24%0%1%-1%<none>%%0%0%-1%0%#0# #-1
+Apache Redirector (SSH)= #109#0%redirector%22%admin%%-1%-1%%%%%0%-1%0%%%-1%-1%0%0%%1080%%0%0%1%%0%%%%0%-1%-1%0%%%0#MobaFont%10%0%0%-1%15%236,236,236%30,30,30%180,180,192%0%-1%0%%xterm%-1%0%_Std_Colors_0_%80%24%0%1%-1%<none>%%0%0%-1%0%#0# #-1
+Guacamole Server (SSH)= #109#0%guac%22%admin%%-1%-1%%%%%0%-1%0%%%-1%-1%0%0%%1080%%0%0%1%%0%%%%0%-1%-1%0%%%0#MobaFont%10%0%0%-1%15%236,236,236%30,30,30%180,180,192%0%-1%0%%xterm%-1%0%_Std_Colors_0_%80%24%0%1%-1%<none>%%0%0%-1%0%#0# #-1
+Kali Linux (SSH)= #109#0%kali%22%admin%%-1%-1%%%%%0%-1%0%%%-1%-1%0%0%%1080%%0%0%1%%0%%%%0%-1%-1%0%%%0#MobaFont%10%0%0%-1%15%236,236,236%30,30,30%180,180,192%0%-1%0%%xterm%-1%0%_Std_Colors_0_%80%24%0%1%-1%<none>%%0%0%-1%0%#0# #-1
+'@
+
+# Write without BOM — MobaXterm silently rejects UTF-8 BOM and recreates a blank config
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText("$mobaDir\MobaXterm.ini", $mobaIni, $utf8NoBom)
+
+# ============================================================================
+# PRE-CONFIGURE CHROMIUM BOOKMARKS
+# ============================================================================
+
+$chromiumDir = "C:\Users\Administrator\AppData\Local\Chromium\User Data\Default"
+New-Item -ItemType Directory -Force -Path $chromiumDir | Out-Null
+
+$bookmarks = @'
+{
+   "checksum": "00000000000000000000000000000000",
+   "roots": {
+      "bookmark_bar": {
+         "children": [
+            {
+               "date_added": "13000000000000000",
+               "date_last_used": "0",
+               "guid": "11111111-1111-1111-1111-111111111111",
+               "id": "2",
+               "name": "Mythic C2",
+               "type": "url",
+               "url": "https://mythic:7443"
+            },
+            {
+               "date_added": "13000000000000001",
+               "date_last_used": "0",
+               "guid": "22222222-2222-2222-2222-222222222222",
+               "id": "3",
+               "name": "redStack Wiki",
+               "type": "url",
+               "url": "https://github.com/BaddKharma/redStack/wiki"
+            }
+         ],
+         "date_added": "13000000000000000",
+         "date_modified": "13000000000000000",
+         "guid": "0bc5d13f-2cba-5d74-951f-3f233fe6c908",
+         "id": "1",
+         "name": "Bookmarks bar",
+         "type": "folder"
+      },
+      "other": {
+         "children": [],
+         "date_added": "13000000000000000",
+         "date_modified": "0",
+         "guid": "82b081ec-3d0b-5e97-a7b6-c3c8e4cce5c4",
+         "id": "4",
+         "name": "Other bookmarks",
+         "type": "folder"
+      },
+      "synced": {
+         "children": [],
+         "date_added": "13000000000000000",
+         "date_modified": "0",
+         "guid": "4cf2e351-0e85-532b-bb37-df045d8f8d0f",
+         "id": "5",
+         "name": "Mobile bookmarks",
+         "type": "folder"
+      }
+   },
+   "version": 1
+}
+'@
+
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText("$chromiumDir\Bookmarks", $bookmarks, $utf8NoBom)
+
+$prefs = '{"bookmark_bar":{"show_on_all_tabs":true}}'
+[System.IO.File]::WriteAllText("$chromiumDir\Preferences", $prefs, $utf8NoBom)
+
+Write-Host "===== Windows Client Setup Completed $(Get-Date) ====="
+
+Stop-Transcript
+</powershell>

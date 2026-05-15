@@ -1,0 +1,87 @@
+# terraform.tfvars.example — redStack on Microsoft Azure
+# Copy this to terraform.tfvars and fill in your values
+
+# ============================================================================
+# REQUIRED VARIABLES
+# ============================================================================
+
+# Your public IP for admin SSH access (CIDR format: X.X.X.X/32)
+# Get it: curl ifconfig.me
+your_public_ip = "1.2.3.4/32"
+
+# Path to your SSH public key (used for Linux VM SSH key auth)
+ssh_public_key_path = "~/.ssh/redstack-key.pub"
+
+# Administrator password — used for all Linux VMs (admin user) and Windows (Administrator)
+# Min 12 chars, must have uppercase, lowercase, digit, and special character
+admin_password = "YourP@ssw0rd2024!"
+
+# Your redirector domain for C2 callbacks (optional — leave empty for IP-only)
+redirector_domain = "c2.yourdomain.com"
+
+# ============================================================================
+# OPTIONAL VARIABLES
+# ============================================================================
+
+# Azure region
+location           = "eastus"
+resource_group_name = "redStack-rg"
+project_name       = "redStack"
+
+# VM sizes (Standard_B series = burstable, cost-effective)
+mythic_vm_size      = "Standard_B2s"    # 2 vCPU, 4GB RAM
+guacamole_vm_size   = "Standard_B1s"    # 1 vCPU, 1GB RAM
+windows_vm_size     = "Standard_B2s"    # 2 vCPU, 4GB RAM
+sliver_vm_size      = "Standard_B1s"    # 1 vCPU, 1GB RAM
+havoc_vm_size       = "Standard_B2s"    # 2 vCPU, 4GB RAM
+redirector_vm_size  = "Standard_B1s"    # 1 vCPU, 1GB RAM
+
+# Kali workstation
+kali_deployment_mode = "headless"       # "headless" or "gui"
+# kali_vm_size       = ""               # Leave empty for auto (Standard_B2s)
+# kali_volume_size   = 0                # Leave 0 for auto (30 headless, 50 gui)
+
+# Network
+vnet_cidr            = "10.50.0.0/16"   # TeamServer VNet
+redirector_vnet_cidr = "10.60.0.0/16"  # Redirector VNet
+
+# Mythic
+enable_mythic_autostart = true
+
+# C2 URI prefixes
+mythic_uri_prefix = "/cdn/media/stream"
+sliver_uri_prefix = "/cloud/storage/objects"
+havoc_uri_prefix  = "/edge/cache/assets"
+
+# C2 header validation
+# c2_header_name  = "X-Request-ID"
+# c2_header_value = ""   # Leave empty to auto-generate
+
+# Redirector filtering
+enable_redirector_htaccess_filtering = true
+
+# Tags
+tags = {
+  Owner      = "Operator"
+  CostCenter = "redStack"
+  Purpose    = "Boot-to-Breach Training Environment"
+}
+
+# ============================================================================
+# NOTES
+# ============================================================================
+#
+# 1. To create an SSH key:
+#    ssh-keygen -t rsa -b 4096 -f ~/.ssh/redstack-key -N ""
+#
+# 2. Kali Linux on Azure:
+#    The default image reference uses the community Kali publisher.
+#    If the image is not available in your region, build a custom image
+#    using Packer or replace with a Debian-based security distro.
+#
+# 3. To verify Kali image availability:
+#    az vm image list --offer kali --all --output table
+#
+# 4. Cost estimate (Standard_B series, ~$0.08-0.17/hr):
+#    Running 5-10 hrs/week with destroy between: ~$25-35/mo
+#    Running 24/7: ~$230/mo (set budget alerts!)
