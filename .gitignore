@@ -18,9 +18,6 @@ terraform.tfvars
 *.tfvars
 *.tfvars.json
 
-# Vagrant
-.vagrant/
-
 # Editor/OS artifacts
 *.swp
 *.swo
@@ -34,3 +31,7 @@ Thumbs.db
 # Crash logs
 crash.log
 crash.*.log
+
+# Docker local env (copy from .env.example)
+C2Stack/Docker/.env
+.env

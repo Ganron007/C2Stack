@@ -1,6 +1,6 @@
 {
   //
-  // markdownlint configuration for redStack
+  // markdownlint configuration for C2Stack
   //
   // Standard markdownlint rules assume plain CommonMark. GitHub Flavored Markdown (GFM)
   // extends this with HTML rendering, alerts, and looser structural conventions that

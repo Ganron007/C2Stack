@@ -1,0 +1,48 @@
+<VirtualHost *:80>
+    ServerName redirector.local
+
+    # Logging
+    LogLevel warn
+    CustomLog ${APACHE_LOG_DIR}/c2stack-access.log combined
+    ErrorLog ${APACHE_LOG_DIR}/c2stack-error.log
+
+    # ----- Decoy Page (served when no valid C2 header is present) -----
+    DocumentRoot /var/www/html
+    <Directory /var/www/html>
+        Require all granted
+    </Directory>
+
+    # ----- Mythic C2 -----
+    <Location "${MYTHIC_URI_PREFIX}">
+        Require all granted
+        RewriteEngine On
+        RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$
+        RewriteRule ^(.*)$ http://${MYTHIC_BACKEND_HOST}:${MYTHIC_BACKEND_PORT}/$1 [P,L]
+    </Location>
+
+    # ----- Sliver C2 -----
+    <Location "${SLIVER_URI_PREFIX}">
+        Require all granted
+        RewriteEngine On
+        RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$
+        RewriteRule ^(.*)$ http://${SLIVER_BACKEND_HOST}:${SLIVER_BACKEND_PORT}/$1 [P,L]
+    </Location>
+
+    # ----- Havoc C2 -----
+    <Location "${HAVOC_URI_PREFIX}">
+        Require all granted
+        RewriteEngine On
+        RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$
+        RewriteRule ^(.*)$ http://${HAVOC_BACKEND_HOST}:${HAVOC_BACKEND_PORT}/$1 [P,L]
+    </Location>
+
+    # ----- Proxy Settings -----
+    ProxyRequests Off
+    ProxyPreserveHost On
+    ProxyTimeout 30
+    SSLProxyEngine Off
+
+    <Proxy *>
+        Require all granted
+    </Proxy>
+</VirtualHost>
