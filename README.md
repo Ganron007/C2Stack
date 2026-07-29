@@ -13,12 +13,15 @@
 Docker-first C2 Framework Training Environment — a containerized practice range that
 turns any lab into a safe C2 playground.
 
-C2Stack runs a header-aware **redirector** in front of four C2 frameworks
-(**Mythic**, **Sliver**, **Havoc**, **Adaptix**) as Docker containers. Your existing
-**Kali VM** is the operator workstation — it runs the C2 clients and attack tooling
-and reaches the frameworks through published ports. No VMs, no Vagrant, no hypervisor
-required. Sliver + Havoc start by default; Mythic and Adaptix are profile-gated
-(`--profile mythic` / `--profile adaptix`) for on-demand activation.
+C2Stack runs a header-aware **redirector** in front of four C2 frameworks as
+Docker containers. Your existing **Kali VM** is the operator workstation — it runs
+the C2 clients and attack tooling and reaches the frameworks through published ports.
+
+- **Sliver + Havoc** — start by default. No extra flags needed.
+- **Mythic** — profile-gated (`--profile mythic`). Pulls upstream image.
+- **Adaptix** — profile-gated (`--profile adaptix`). Builds from source (~5 min first run).
+
+No VMs, no Vagrant, no hypervisor required.
 
 ## Architecture
 
