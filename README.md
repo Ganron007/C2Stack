@@ -25,27 +25,34 @@ No VMs, no Vagrant, no hypervisor required.
 
 ## Architecture
 
-```
-                       Docker host (on vmnet2 / CADRE lab network)
-┌──────────────────────────────────────────────────────────────────────────┐
-│                                                                            │
-│   c2_edge (published)          c2_core (internal: true)                   │
-│   ┌──────────────────┐         ┌──────────────────────────────────────┐  │
-│   │   redirector     │  proxy  │  mythic · sliver · havoc · adaptix   │  │
-│   │  Apache :80      │ ──────▶ │  each listens on :80 for C2 callback  │  │
-│   │  header check    │         └──────────────────────────────────────┘  │
-│   └────────┬─────────┘                                                    │
-└────────────┼─────────────────────────────────────────────────────────────┘
-             │ victim-facing port (REDIRECTOR_HTTP_PORT)
-             ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│  vmnet2 (192.168.77.0/24) — CADRE Lab / Targets                           │
-│  dc01 · mbr01 · linux01 · · ·  (victims call back to host IP :80)         │
-└──────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph CADRE[" CADRE Lab · 192.168.77.0/24 "]
+        victim["dc01 · mbr01 · linux01 · ws01<br/><i>callback + X-Request-ID: cadre-c2</i>"]
+    end
 
-   Kali VM (operator): sliver-client → host:31337, havoc client → host:40056,
-   Mythic UI → https://host:7443
+    subgraph Docker[" Docker Host "]
+        subgraph edge[" c2_edge (published) "]
+            r["redirector · Apache :80<br/>header check → proxy<br/>no header → decoy CDN"]
+        end
+        subgraph core[" c2_core (internal) "]
+            s["sliver :80"] & h["havoc :80"]
+            m["mythic ★ :80"]
+            a["adaptix ★ :80"]
+        end
+    end
+
+    subgraph Kali[" Kali VM (operator) "]
+        op["sliver-client → :31337<br/>havoc client → :40056<br/>Mythic UI → :7443<br/>Adaptix Qt → :4321"]
+    end
+
+    victim -->|"HTTP callback"| r
+    r -->|"proxy by URI prefix"| s & h & m & a
+    r -.->|"no header"| victim
+    op -->|"control ports"| s & h & m & a
 ```
+
+> ★ profile-gated — enable with `--profile mythic` / `--profile adaptix`
 
 **Traffic flow:**
 1. A payload on a victim calls back to `http://<host-ip-on-vmnet2>:<REDIRECTOR_HTTP_PORT>/<prefix>`
