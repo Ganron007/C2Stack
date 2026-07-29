@@ -9,12 +9,18 @@
     - Prints status and operator next steps.
 .PARAMETER Mythic
     Also bring up the Mythic stack (needs first-run network access to pull images).
+.PARAMETER Adaptix
+    Also bring up the Adaptix stack (builds server + extenders from source).
+.PARAMETER All
+    Bring up all frameworks (mythic + adaptix profiles).
 .PARAMETER NoBuild
     Skip the build step (use cached images).
 #>
 [CmdletBinding()]
 param(
     [switch]$Mythic,
+    [switch]$Adaptix,
+    [switch]$All,
     [switch]$NoBuild
 )
 
@@ -45,7 +51,8 @@ Write-Host "[bootstrap] Docker is available." -ForegroundColor Green
 # 3. Build + up.
 $composeArgs = @("compose", "--env-file", ".env", "up", "-d")
 if (-not $NoBuild) { $composeArgs += "--build" }
-if ($Mythic) { $composeArgs += "--profile", "mythic" }
+if ($Mythic -or $All) { $composeArgs += "--profile", "mythic" }
+if ($Adaptix -or $All) { $composeArgs += "--profile", "adaptix" }
 
 Write-Host "[bootstrap] Starting C2Stack stack..." -ForegroundColor Cyan
 & docker @composeArgs
@@ -62,6 +69,7 @@ Write-Host @"
   - Mythic UI (if enabled)       : https://<host-ip-on-vmnet2>:${env:MYTHIC_UI_PORT:-7443}
   - Sliver operator port         : ${env:SLIVER_CTRL_PORT:-31337}
   - Havoc teamserver port        : ${env:HAVOC_TS_PORT:-40056}
+  - Adaptix teamserver port      : ${env:ADAPTIX_TS_PORT:-4321}  (Qt GUI client)
 
   Verify the redirector decoy page (no header -> CloudEdge CDN):
     curl http://<host-ip-on-vmnet2>:${env:REDIRECTOR_HTTP_PORT:-80}/
@@ -69,6 +77,9 @@ Write-Host @"
   Verify C2 routing (with header -> backend):
     curl -H "${env:C2_HEADER_NAME:-X-Request-ID}: ${env:C2_HEADER_VALUE:-cadre-c2}" `
       http://<host-ip-on-vmnet2>:${env:REDIRECTOR_HTTP_PORT:-80}${env:MYTHIC_URI_PREFIX:-/cdn/media/stream}/
+
+  Adaptix operator connection (Qt GUI client on Kali):
+    Configure endpoint to <host-ip-on-vmnet2>:${env:ADAPTIX_TS_PORT:-4321}
 "@ -ForegroundColor White
 
 Pop-Location

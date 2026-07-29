@@ -16,7 +16,7 @@ The practice build should still preserve these behaviors:
 
 - Victim-facing entry point remains separate from the real C2 backend.
 - Redirector logic still requires a valid header before proxying to the backend.
-- Mythic, Sliver, and Havoc remain usable as distinct frameworks.
+- Mythic, Sliver, Havoc, and Adaptix remain usable as distinct frameworks.
 - Loki remains optional and separate because it already uses Azure Blob Storage rather than the redirector path.
 - Operator state should persist across restarts.
 
@@ -106,13 +106,13 @@ That gives the best speed-to-learning ratio without forcing the whole stack into
 ## Implementation (Docker-first)
 
 The stack is implemented under `C2Stack/Docker/`. The Kali VM is the operator
-workstation; the redirector and the three C2 frameworks run as containers.
+workstation; the redirector and the four C2 frameworks run as containers.
 
 ### Layout
 
 ```
 C2Stack/Docker/
-├── docker-compose.yml        # redirector + sliver + havoc (+ mythic profile)
+├── docker-compose.yml        # redirector + sliver + havoc (+ mythic/adaptix profiles)
 ├── .env.example              # copy to .env and adjust
 ├── docker-bootstrap.ps1      # Windows host bootstrap (Docker Desktop)
 ├── docker-bootstrap.sh       # Linux/macOS host bootstrap
@@ -124,6 +124,7 @@ C2Stack/Docker/
 │   └── entrypoint.sh
 ├── sliver/Dockerfile         # prebuilt sliver-server, daemon mode
 ├── havoc/Dockerfile          # builds teamserver from source
+├── adaptix/Dockerfile        # builds Adaptix teamserver + extenders from source
 └── mythic/                   # (optional) server data mount
 ```
 
@@ -139,15 +140,19 @@ C2Stack/Docker/
 ```powershell
 # Windows (Docker Desktop)
 cd C2Stack\Docker
-.\docker-bootstrap.ps1            # redirector + sliver + havoc
-.\docker-bootstrap.ps1 -Mythic    # also bring up Mythic
+.\docker-bootstrap.ps1               # redirector + sliver + havoc (default)
+.\docker-bootstrap.ps1 -Mythic       # also bring up Mythic
+.\docker-bootstrap.ps1 -Adaptix      # also bring up Adaptix (builds from source)
+.\docker-bootstrap.ps1 -All          # all four frameworks
 ```
 
 ```bash
 # Linux/macOS
 cd C2Stack/Docker
-./docker-bootstrap.sh             # redirector + sliver + havoc
-./docker-bootstrap.sh --mythic    # also bring up Mythic
+./docker-bootstrap.sh                # redirector + sliver + havoc (default)
+./docker-bootstrap.sh --mythic       # also bring up Mythic
+./docker-bootstrap.sh --adaptix      # also bring up Adaptix (builds from source)
+./docker-bootstrap.sh --all          # all four frameworks
 ```
 
 ### Operator (Kali VM) next steps
@@ -157,6 +162,7 @@ cd C2Stack/Docker
 - Mythic UI: `https://<host-ip-on-vmnet2>:<MYTHIC_UI_PORT>` (enable `--profile mythic`).
 - Sliver operator: connect `sliver-client` to `<host-ip>:31337`.
 - Havoc teamserver: `<host-ip>:40056`.
+- Adaptix operator: Qt GUI client → `<host-ip>:4321` (enable `--profile adaptix`).
 
 ### Framework listener tuning
 
@@ -170,12 +176,15 @@ path**, exactly like the VM setup. Configure each framework's HTTP C2 listener t
   redirector still forwards the prefix and Havoc answers on its configured endpoints.
 - **Mythic** — install the `http` C2 profile, then set its callback host to the
   redirector URL and ensure the profile serves C2 under `/cdn/media/stream`.
+- **Adaptix** — the HTTP Beacon listener binds port `80` inside the container. Set
+  the listener URI to `/api/v1/sync` to match the redirector prefix. The DNS, SMB,
+  and TCP listeners operate out-of-band (not through the redirector).
 
 ### Known tradeoffs vs the VM design
 
 - Container isolation is weaker than the hypervisor trust boundary between redirector
   and C2 backend. `c2_core` being `internal` recovers most of the egress isolation.
-- Mythic is profile-gated because its first run pulls images and installs the http
-  profile; pin image tags in `docker-compose.yml` for reproducible builds.
+- Mythic and Adaptix are profile-gated to keep the default stack lightweight. Mythic
+  pulls upstream images; Adaptix builds from source (first build ~5-10 min).
 - Havoc is built from source at image-build time (needs network); Sliver pulls a
   prebuilt binary. Both persist data via named volumes.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # C2Stack Docker practice-lab bootstrap (Linux/macOS host).
 # Copies .env.example -> .env if missing, checks Docker, then builds + starts
-# the stack. Pass --mythic to also bring up the Mythic profile.
+# the stack. Pass --mythic, --adaptix, or --all to enable optional frameworks.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -19,7 +19,12 @@ fi
 echo "[bootstrap] Docker is available."
 
 ARGS=(compose --env-file .env up -d --build)
-if [ "${1:-}" = "--mythic" ]; then ARGS+=(--profile mythic); fi
+for arg in "$@"; do
+  case "$arg" in
+    --mythic|--all) ARGS+=(--profile mythic) ;;
+    --adaptix|--all) ARGS+=(--profile adaptix) ;;
+  esac
+done
 
 echo "[bootstrap] Starting C2Stack stack..."
 docker "${ARGS[@]}"
@@ -35,6 +40,7 @@ cat <<EOF
   - Mythic UI (if enabled)       : https://<host-ip-on-vmnet2>:${MYTHIC_UI_PORT:-7443}
   - Sliver operator port         : ${SLIVER_CTRL_PORT:-31337}
   - Havoc teamserver port        : ${HAVOC_TS_PORT:-40056}
+  - Adaptix teamserver port      : ${ADAPTIX_TS_PORT:-4321}  (Qt GUI client)
 
   Verify the redirector decoy page (no header -> CloudEdge CDN):
     curl http://<host-ip-on-vmnet2>:${REDIRECTOR_HTTP_PORT:-80}/

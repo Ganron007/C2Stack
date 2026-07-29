@@ -36,6 +36,14 @@
         RewriteRule ^(.*)$ http://${HAVOC_BACKEND_HOST}:${HAVOC_BACKEND_PORT}/$1 [P,L]
     </Location>
 
+    # ----- Adaptix C2 -----
+    <Location "${ADAPTIX_URI_PREFIX}">
+        Require all granted
+        RewriteEngine On
+        RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$
+        RewriteRule ^(.*)$ http://${ADAPTIX_BACKEND_HOST}:${ADAPTIX_BACKEND_PORT}/$1 [P,L]
+    </Location>
+
     # ----- Proxy Settings -----
     ProxyRequests Off
     ProxyPreserveHost On

@@ -1,12 +1,17 @@
 # ============================================================================
 # C2Stack — Docker Practice Lab
-# Redirector + Mythic + Sliver + Havoc. The Kali VM is the operator
-# workstation (runs sliver-client / havoc client / browser to Mythic UI).
+# Redirector + Sliver + Havoc (default) + Mythic + Adaptix (profile-gated).
+# The Kali VM is the operator workstation (runs sliver-client / havoc client /
+# Adaptix Qt GUI / browser to Mythic UI).
 #
-# Bring everything up:
+# Default (lightweight):
 #   docker compose --env-file .env up -d --build
-# Bring up everything EXCEPT Mythic (Mythic needs first-run network access):
-#   docker compose --env-file .env up -d --build --profile mythic
+# With Mythic:
+#   docker compose --env-file .env --profile mythic up -d --build
+# With Adaptix (builds from source, ~5-10 min first run):
+#   docker compose --env-file .env --profile adaptix up -d --build
+# All four frameworks:
+#   docker compose --env-file .env --profile mythic --profile adaptix up -d --build
 #
 # Networks:
 #   c2_edge  - redirector publishes its victim-facing port here
@@ -24,6 +29,7 @@ networks:
 volumes:
   sliver_data:
   havoc_data:
+  adaptix_data:
   mythic_postgres:
 
 services:
@@ -126,6 +132,26 @@ services:
     profiles: ["mythic"]
     depends_on:
       - mythic_rabbitmq
+    networks:
+      - c2_core
+    restart: unless-stopped
+
+  # ------------------------------------------------------------------
+  # Adaptix C2 (profile-gated: enable with --profile adaptix)
+  # Go-based post-exploitation framework. Teamserver listens on :4321
+  # for the Qt GUI client; HTTP C2 traffic arrives through the redirector
+  # on :80 (ADAPTIX_URI_PREFIX). Extenders: HTTP/S, DNS/DoH, SMB, TCP
+  # beacon + Gopher TCP/mTLS agent.
+  # ------------------------------------------------------------------
+  adaptix:
+    build:
+      context: ../../CADRE-Integrations/AdaptixC2-main
+      dockerfile: ../../C2Stack/Docker/adaptix/Dockerfile
+    profiles: ["adaptix"]
+    volumes:
+      - adaptix_data:/app/data
+    ports:
+      - "${ADAPTIX_TS_PORT}:4321"
     networks:
       - c2_core
     restart: unless-stopped

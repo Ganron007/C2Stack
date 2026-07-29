@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/CADRE-Platform/C2Stack"><img src="https://img.shields.io/badge/Status-v2.0.0-blue.svg" alt="Status"></a>
+  <a href="https://github.com/CADRE-Platform/C2Stack"><img src="https://img.shields.io/badge/Status-v3.0.0-blue.svg" alt="Status"></a>
   <a href="https://github.com/CADRE-Platform/C2Stack"><img src="https://img.shields.io/badge/Platform-Docker%20Compose-amber.svg" alt="Platform"></a>
   <a href="https://github.com/CADRE-Platform/C2Stack"><img src="https://img.shields.io/badge/Redirector-Apache%20Proxy-red.svg" alt="Redirector"></a>
 </p>
@@ -13,10 +13,12 @@
 Docker-first C2 Framework Training Environment — a containerized practice range that
 turns any lab into a safe C2 playground.
 
-C2Stack runs a header-aware **redirector** in front of three C2 frameworks
-(**Mythic**, **Sliver**, **Havoc**) as Docker containers. Your existing **Kali VM**
-is the operator workstation — it runs the C2 clients and attack tooling and reaches
-the frameworks through published ports. No VMs, no Vagrant, no hypervisor required.
+C2Stack runs a header-aware **redirector** in front of four C2 frameworks
+(**Mythic**, **Sliver**, **Havoc**, **Adaptix**) as Docker containers. Your existing
+**Kali VM** is the operator workstation — it runs the C2 clients and attack tooling
+and reaches the frameworks through published ports. No VMs, no Vagrant, no hypervisor
+required. Sliver + Havoc start by default; Mythic and Adaptix are profile-gated
+(`--profile mythic` / `--profile adaptix`) for on-demand activation.
 
 ## Architecture
 
@@ -26,7 +28,7 @@ the frameworks through published ports. No VMs, no Vagrant, no hypervisor requir
 │                                                                            │
 │   c2_edge (published)          c2_core (internal: true)                   │
 │   ┌──────────────────┐         ┌──────────────────────────────────────┐  │
-│   │   redirector     │  proxy  │  mythic · sliver · havoc  (containers)│  │
+│   │   redirector     │  proxy  │  mythic · sliver · havoc · adaptix   │  │
 │   │  Apache :80      │ ──────▶ │  each listens on :80 for C2 callback  │  │
 │   │  header check    │         └──────────────────────────────────────┘  │
 │   └────────┬─────────┘                                                    │
@@ -66,15 +68,19 @@ Prerequisites:
 ```powershell
 # Windows (Docker Desktop)
 cd C2Stack\Docker
-.\docker-bootstrap.ps1            # redirector + sliver + havoc
-.\docker-bootstrap.ps1 -Mythic    # also bring up Mythic
+.\docker-bootstrap.ps1               # redirector + sliver + havoc (default)
+.\docker-bootstrap.ps1 -Mythic       # also bring up Mythic
+.\docker-bootstrap.ps1 -Adaptix      # also bring up Adaptix (builds from source)
+.\docker-bootstrap.ps1 -All          # all four frameworks
 ```
 
 ```bash
 # Linux / macOS
 cd C2Stack/Docker
-./docker-bootstrap.sh             # redirector + sliver + havoc
-./docker-bootstrap.sh --mythic    # also bring up Mythic
+./docker-bootstrap.sh               # redirector + sliver + havoc (default)
+./docker-bootstrap.sh --mythic      # also bring up Mythic
+./docker-bootstrap.sh --adaptix     # also bring up Adaptix (builds from source)
+./docker-bootstrap.sh --all         # all four frameworks
 ```
 
 This copies `.env.example` → `.env` (review it), builds the images, and starts the
@@ -105,16 +111,30 @@ operator next steps.
 | `mythic` | Mythic server + http C2 profile | 80 | 7443 (UI) |
 | `sliver` | Sliver teamserver | 80 | 31337 |
 | `havoc` | Havoc teamserver | 80 | 40056 |
+| `adaptix` | Adaptix teamserver + extenders (HTTP/S, DNS, SMB, TCP, Gopher) | 80 | 4321 (Qt GUI) |
 
 All C2 frameworks share the `c2_core` internal network; only the redirector is
 exposed. Configuration lives in `Docker/.env` (copy from `.env.example`).
+
+### Adaptix C2 — Go-based post-exploitation framework
+
+Adaptix is a Go/C++ post-exploitation framework with a Qt GUI client. Features:
+- **Listeners:** HTTP/S, DNS/DoH, SMB, TCP Beacon + TCP/mTLS Gopher
+- **Multi-user:** server/client architecture with multiplayer support
+- **Extensible:** plugin-based agents and listeners via Extension-Kit
+- **Cross-platform:** Windows, Linux, macOS agent support
+- **BOF support:** Beacon Object Files + async BOF execution
+
+The Adaptix teamserver runs behind the redirector; the Qt GUI client connects
+directly to the published operator port (default `4321`). Build from source
+via `--profile adaptix`. First build takes ~5-10 minutes.
 
 ## Requirements
 
 | Resource | Minimum |
 |----------|:-------:|
-| RAM | 6 GB (redirector + 3 frameworks + overhead) |
-| Disk | 20 GB (images + volumes) |
+| RAM | 8 GB (redirector + 4 frameworks + overhead) |
+| Disk | 25 GB (images + volumes + Adaptix build) |
 | Docker | Docker Desktop 4.x / Compose v2 |
 | Network | vmnet2 (192.168.77.0/24) — shared with CADRE |
 
@@ -136,6 +156,7 @@ C2Stack/
 │   ├── redirector/       Apache image (header routing + decoy)
 │   ├── sliver/           sliver-server image
 │   ├── havoc/            Havoc teamserver image
+│   ├── adaptix/          Adaptix teamserver image (builds from source)
 │   └── mythic/           (optional) Mythic data mount
 └── Doc/
     └── Docker.md         Docker architecture + practice guide
