@@ -10,6 +10,8 @@
   <a href="https://github.com/CADRE-Platform/C2Stack"><img src="https://img.shields.io/badge/Redirector-Apache%20Proxy-red.svg" alt="Redirector"></a>
 </p>
 
+Part of the [CADRE](https://github.com/Ganron007/CADRE) platform — Docker-first C2 training (Sliver, Havoc, Mythic, Adaptix) with lab callbacks into the CADRE range.
+
 Docker-first C2 Framework Training Environment — a containerized practice range that
 turns any lab into a safe C2 playground.
 
