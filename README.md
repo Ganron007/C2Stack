@@ -12,6 +12,9 @@
 
 Part of the [CADRE](https://github.com/Ganron007/CADRE) platform — Docker-first C2 training (Sliver, Havoc, Mythic, Adaptix) with lab callbacks into the CADRE range.
 
+> [!NOTE]
+> **Feature testing in progress.** Default Sliver/Havoc bring-up works for practice, but Mythic/Adaptix profiles, redirector edge cases, and CADRE callback wiring are still being exercised. Expect compose profiles and docs to keep evolving.
+
 Docker-first C2 Framework Training Environment — a containerized practice range that
 turns any lab into a safe C2 playground.
 
