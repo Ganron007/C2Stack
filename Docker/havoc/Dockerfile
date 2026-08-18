@@ -29,6 +29,6 @@ COPY --from=builder /src/teamserver/Profiles ./Profiles
 EXPOSE 80 40056
 
 # Havoc teamserver. The operator builds the HTTP C2 listener via the Havoc
-# client (see Doc/Docker-Practice-Proposal.md): bind port 80 so the redirector
+# client (see Doc/Docker.md): bind port 80 so the redirector
 # can forward ${HAVOC_URI_PREFIX} to it.
 CMD ["./havoc", "--dev", "--rest", "--range", "0.0.0.0/0"]

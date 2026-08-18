@@ -5,10 +5,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/CADRE-Platform/C2Stack"><img src="https://img.shields.io/badge/Status-v3.1.0-blue.svg" alt="Status"></a>
-  <a href="https://github.com/CADRE-Platform/C2Stack"><img src="https://img.shields.io/badge/Platform-Docker%20Compose-amber.svg" alt="Platform"></a>
-  <a href="https://github.com/CADRE-Platform/C2Stack"><img src="https://img.shields.io/badge/Redirector-Apache%20Proxy-red.svg" alt="Redirector"></a>
-  <a href="https://github.com/CADRE-Platform/C2Stack"><img src="https://img.shields.io/badge/DNS%20C2-Meridian%20Tunnel-green.svg" alt="DNS C2"></a>
+  <a href="https://github.com/Ganron007/C2Stack"><img src="https://img.shields.io/badge/Status-v3.1.0-blue.svg" alt="Status"></a>
+  <a href="https://github.com/Ganron007/C2Stack"><img src="https://img.shields.io/badge/Platform-Docker%20Compose-amber.svg" alt="Platform"></a>
+  <a href="https://github.com/Ganron007/C2Stack"><img src="https://img.shields.io/badge/Redirector-Apache%20Proxy-red.svg" alt="Redirector"></a>
+  <a href="https://github.com/Ganron007/C2Stack"><img src="https://img.shields.io/badge/DNS%20C2-Meridian%20Tunnel-green.svg" alt="DNS C2"></a>
 </p>
 
 Part of the [CADRE](https://github.com/Ganron007/CADRE) platform — Docker-first C2 training (Havoc, Sliver, Meridian, Mythic, Adaptix) with lab callbacks into the CADRE range.

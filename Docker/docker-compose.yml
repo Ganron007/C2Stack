@@ -152,7 +152,7 @@ services:
   # ------------------------------------------------------------------
   adaptix:
     build:
-      context: ../../CADRE-Integrations/AdaptixC2-main
+      context: ../../Integrations/AdaptixC2-main
       dockerfile: ../../C2Stack/Docker/adaptix/Dockerfile
     profiles: ["adaptix"]
     volumes:
