@@ -108,11 +108,7 @@ This copies `.env.example` → `.env`, builds the images, and starts the stack.
 
 ## Using With CADRE
 
-The CADRE lab VMs (`dc01`/`dc02`/`dc03`/`mbr01`/`mbr02`/`linux01`/`ws01` on `192.168.77.0/24`) are your practice targets:
+## Documentation & Guides
 
-1. Start the stack (above). Note the Docker host IP on `vmnet2`.
-2. Generate an implant or use the precompiled Meridian binaries in `/opt/meridian/payloads/`.
-3. Point callbacks to `http://<host-ip-on-vmnet2>:<REDIRECTOR_HTTP_PORT>/<prefix>` with header `X-Request-ID: cadre-c2` (or DNS to port `5353`).
-4. Watch callbacks arrive through the redirector into the corresponding C2 framework.
-
-See [`Doc/Docker.md`](Doc/Docker.md) for listener tuning, reverse proxy routing, and operator runbooks.
+- **[Field Practice & Study Guide](Doc/PRACTICE-GUIDE.md)** — Complete step-by-step tutorial, hands-on lab modules, DNS covert tunneling walk-through, and DFIR-Nexus detection synergy.
+- **[Docker Architecture Reference](Doc/Docker.md)** — In-depth container layout, listener tuning, volume persistence, and isolation mechanics.

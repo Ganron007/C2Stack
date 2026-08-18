@@ -188,6 +188,12 @@ path**, exactly like the VM setup. Configure each framework's HTTP C2 listener t
 - **Adaptix** — the HTTP Beacon listener binds port `80` inside the container. Set
   the listener URI to `/api/v1/sync` to match the redirector prefix. The DNS, SMB,
   and TCP listeners operate out-of-band (not through the redirector).
+- **Meridian** — the HTTP listener binds port `8080` on `c2_core` (`/gateway/v1/telemetry`),
+  while the DNS listener listens on `0.0.0.0:5353/udp` (domain `c2.cadre.local`).
+
+### Further Reading & Field Practice
+
+- See the **[Field Practice & Study Guide](PRACTICE-GUIDE.md)** for detailed lab exercises, DNS covert tunneling walk-through, and DFIR-Nexus threat hunting queries.
 
 ### Known tradeoffs vs the VM design
 
