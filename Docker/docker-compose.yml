@@ -30,6 +30,7 @@ volumes:
   sliver_data:
   havoc_data:
   adaptix_data:
+  meridian_data:
   mythic_postgres:
 
 services:
@@ -46,12 +47,18 @@ services:
       MYTHIC_URI_PREFIX: ${MYTHIC_URI_PREFIX}
       SLIVER_URI_PREFIX: ${SLIVER_URI_PREFIX}
       HAVOC_URI_PREFIX: ${HAVOC_URI_PREFIX}
+      ADAPTIX_URI_PREFIX: ${ADAPTIX_URI_PREFIX}
+      MERIDIAN_URI_PREFIX: ${MERIDIAN_URI_PREFIX}
       MYTHIC_BACKEND_HOST: ${MYTHIC_BACKEND_HOST}
       MYTHIC_BACKEND_PORT: ${MYTHIC_BACKEND_PORT}
       SLIVER_BACKEND_HOST: ${SLIVER_BACKEND_HOST}
       SLIVER_BACKEND_PORT: ${SLIVER_BACKEND_PORT}
       HAVOC_BACKEND_HOST: ${HAVOC_BACKEND_HOST}
       HAVOC_BACKEND_PORT: ${HAVOC_BACKEND_PORT}
+      ADAPTIX_BACKEND_HOST: ${ADAPTIX_BACKEND_HOST}
+      ADAPTIX_BACKEND_PORT: ${ADAPTIX_BACKEND_PORT}
+      MERIDIAN_BACKEND_HOST: ${MERIDIAN_BACKEND_HOST}
+      MERIDIAN_BACKEND_PORT: ${MERIDIAN_BACKEND_PORT}
     ports:
       - "${REDIRECTOR_HTTP_PORT}:80"
     networks:
@@ -154,4 +161,22 @@ services:
       - "${ADAPTIX_TS_PORT}:4321"
     networks:
       - c2_core
+    restart: unless-stopped
+
+  # ------------------------------------------------------------------
+  # Meridian C2 — Lightweight Dual-Transport (HTTP/S + DNS TXT) C2
+  # Zero-dependency Go implant + async Python daemon.
+  # HTTP callbacks routed via redirector on :80 (MERIDIAN_URI_PREFIX).
+  # DNS C2 listener exposed on UDP port 5353 for DNS covert tunneling.
+  # ------------------------------------------------------------------
+  meridian:
+    build:
+      context: ./meridian
+    volumes:
+      - meridian_data:/root/.meridian
+    ports:
+      - "${MERIDIAN_DNS_PORT}:5353/udp"
+    networks:
+      - c2_core
+      - c2_edge
     restart: unless-stopped

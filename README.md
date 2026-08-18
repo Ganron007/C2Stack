@@ -5,178 +5,114 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/CADRE-Platform/C2Stack"><img src="https://img.shields.io/badge/Status-v3.0.0-blue.svg" alt="Status"></a>
+  <a href="https://github.com/CADRE-Platform/C2Stack"><img src="https://img.shields.io/badge/Status-v3.1.0-blue.svg" alt="Status"></a>
   <a href="https://github.com/CADRE-Platform/C2Stack"><img src="https://img.shields.io/badge/Platform-Docker%20Compose-amber.svg" alt="Platform"></a>
   <a href="https://github.com/CADRE-Platform/C2Stack"><img src="https://img.shields.io/badge/Redirector-Apache%20Proxy-red.svg" alt="Redirector"></a>
+  <a href="https://github.com/CADRE-Platform/C2Stack"><img src="https://img.shields.io/badge/DNS%20C2-Meridian%20Tunnel-green.svg" alt="DNS C2"></a>
 </p>
 
-Part of the [CADRE](https://github.com/Ganron007/CADRE) platform — Docker-first C2 training (Sliver, Havoc, Mythic, Adaptix) with lab callbacks into the CADRE range.
+Part of the [CADRE](https://github.com/Ganron007/CADRE) platform — Docker-first C2 training (Havoc, Sliver, Meridian, Mythic, Adaptix) with lab callbacks into the CADRE range.
 
 > [!NOTE]
-> **Feature testing in progress.** Default Sliver/Havoc bring-up works for practice, but Mythic/Adaptix profiles, redirector edge cases, and CADRE callback wiring are still being exercised. Expect compose profiles and docs to keep evolving.
+> **Docker-First C2 Framework Training Environment** — a containerized practice range that turns any lab into a safe, multi-tier C2 playground with zero VM management overhead for backends.
 
-Docker-first C2 Framework Training Environment — a containerized practice range that
-turns any lab into a safe C2 playground.
+C2Stack runs a header-aware **Apache redirector** in front of five C2 frameworks as Docker containers. Your existing **Kali VM** is the operator workstation — it runs the C2 clients and attack tooling, reaching the frameworks through published control ports.
 
-C2Stack runs a header-aware **redirector** in front of four C2 frameworks as
-Docker containers. Your existing **Kali VM** is the operator workstation — it runs
-the C2 clients and attack tooling and reaches the frameworks through published ports.
-
-- **Sliver + Havoc** — start by default. No extra flags needed.
+- **Meridian + Sliver + Havoc** — start by default. No extra flags needed.
 - **Mythic** — profile-gated (`--profile mythic`). Pulls upstream image.
 - **Adaptix** — profile-gated (`--profile adaptix`). Builds from source (~5 min first run).
 
-No VMs, no Vagrant, no hypervisor required.
+---
 
 ## Architecture
 
-```mermaid
-flowchart TB
-    subgraph CADRE[" CADRE Lab · 192.168.77.0/24 "]
-        victim["dc01 · mbr01 · linux01 · ws01<br/><i>callback + X-Request-ID: cadre-c2</i>"]
-    end
+<p align="center">
+  <img src="assets/c2stack-architecture.svg" alt="C2Stack Architecture" width="960">
+</p>
 
-    subgraph Docker[" Docker Host "]
-        subgraph edge[" c2_edge (published) "]
-            r["redirector · Apache :80<br/>header check → proxy<br/>no header → decoy CDN"]
-        end
-        subgraph core[" c2_core (internal) "]
-            s["sliver :80"] & h["havoc :80"]
-            m["mythic ★ :80"]
-            a["adaptix ★ :80"]
-        end
-    end
+### Traffic Flow & OPSEC Boundaries
 
-    subgraph Kali[" Kali VM (operator) "]
-        op["sliver-client → :31337<br/>havoc client → :40056<br/>Mythic UI → :7443<br/>Adaptix Qt → :4321"]
-    end
+1. **Callback Initiation**: A payload on a victim calls back to `http://<host-ip-on-vmnet2>:<REDIRECTOR_HTTP_PORT>/<prefix>` with header `X-Request-ID: cadre-c2`, or sends UDP DNS TXT queries to `<host-ip-on-vmnet2>:5353`.
+2. **Header Inspection**: The Apache redirector validates the header:
+   - **Valid Header**: Proxies to the matching C2 container on the isolated `c2_core` network based on the URI prefix.
+   - **Missing / Invalid Header**: Serves a benign **CloudEdge CDN Decoy Page** (shielding the teamservers from scanners and incident responders).
+3. **Network Isolation**: The C2 containers live on an internal `c2_core` network with **zero direct internet egress** and are only reachable through the redirector.
+4. **Loki C2 (Out-of-Band Cloud Simulation)**:
+   Loki uses Azure Storage Blob as its C2 channel — agents talk directly to Azure, bypassing the redirector entirely. Best suited for Azure hybrid AD environments.
 
-    victim -->|"HTTP callback"| r
-    r -->|"proxy by URI prefix"| s & h & m & a
-    r -.->|"no header"| victim
-    op -->|"control ports"| s & h & m & a
-```
-
-> ★ profile-gated — enable with `--profile mythic` / `--profile adaptix`
-
-**Traffic flow:**
-1. A payload on a victim calls back to `http://<host-ip-on-vmnet2>:<REDIRECTOR_HTTP_PORT>/<prefix>`
-   with header `X-Request-ID: cadre-c2`.
-2. The redirector validates the header → proxies to the matching C2 container on `c2_core`.
-3. No valid header → serves a **decoy CDN page** (OPSEC).
-4. The C2 containers live on an `internal` network — they have **no direct internet
-   egress** and are only reachable through the redirector.
-
-**Loki C2 (optional):**
-Loki uses Azure Storage Blob as its C2 channel — agents talk directly to Azure,
-bypassing the redirector entirely. It is out-of-band (not containerized) and best
-suited for Azure hybrid AD environments where blob traffic blends in. Requires a
-Storage Account + SAS token and outbound access to `*.blob.core.windows.net`.
+---
 
 ## Quick Start
 
 Prerequisites:
 - Docker Desktop running on the host (Windows / Linux / macOS).
-- A Kali VM as the operator workstation (you already have one).
-- Host reachable from the CADRE lab network (vmnet2, 192.168.77.0/24).
+- A Kali VM as the operator workstation (or host shell).
+- Host reachable from the CADRE lab network (vmnet2, `192.168.77.0/24`).
 
 ```powershell
 # Windows (Docker Desktop)
 cd C2Stack\Docker
-.\docker-bootstrap.ps1               # redirector + sliver + havoc (default)
+.\docker-bootstrap.ps1               # redirector + meridian + sliver + havoc (default)
 .\docker-bootstrap.ps1 -Mythic       # also bring up Mythic
 .\docker-bootstrap.ps1 -Adaptix      # also bring up Adaptix (builds from source)
-.\docker-bootstrap.ps1 -All          # all four frameworks
+.\docker-bootstrap.ps1 -All          # all frameworks
 ```
 
 ```bash
 # Linux / macOS
 cd C2Stack/Docker
-./docker-bootstrap.sh               # redirector + sliver + havoc (default)
+./docker-bootstrap.sh               # redirector + meridian + sliver + havoc (default)
 ./docker-bootstrap.sh --mythic      # also bring up Mythic
 ./docker-bootstrap.sh --adaptix     # also bring up Adaptix (builds from source)
-./docker-bootstrap.sh --all         # all four frameworks
+./docker-bootstrap.sh --all         # all frameworks
 ```
 
-This copies `.env.example` → `.env` (review it), builds the images, and starts the
-stack. The redirector publishes its victim-facing port; the C2 frameworks publish
-their operator/control ports to the host.
+This copies `.env.example` → `.env`, builds the images, and starts the stack.
 
-## Using With CADRE
-
-The CADRE lab VMs (dc01/dc02/mbr01/mbr02/linux01 on 192.168.77.0/24) are your practice
-targets. They are already vulnerable — ACLs, SPNs, delegations, SMB signing disabled,
-LDAP signing not required, and 60+ documented attack paths.
-
-1. Start the stack (above). Note the Docker host IP on vmnet2.
-2. Generate a payload from Mythic/Sliver/Havoc → point the callback to
-   `http://<host-ip-on-vmnet2>:<REDIRECTOR_HTTP_PORT>` with header
-   `X-Request-ID: cadre-c2` and the framework's URI prefix.
-3. Deliver the payload to a CADRE target (SMB share, phishing, etc.).
-4. Watch callbacks arrive through the redirector into the right C2 container.
-
-See [`Doc/Docker.md`](Doc/Docker.md) for the full architecture, listener tuning, and
-operator next steps.
+---
 
 ## Components
 
-| Container | Role | C2 port (internal) | Operator/control port (published) |
-|-----------|------|:------------------:|----------------------------------:|
-| `redirector` | Apache header-based proxy + decoy page | 80 (published) | — |
-| `mythic` | Mythic server + http C2 profile | 80 | 7443 (UI) |
-| `sliver` | Sliver teamserver | 80 | 31337 |
-| `havoc` | Havoc teamserver | 80 | 40056 |
-| `adaptix` | Adaptix teamserver + extenders (HTTP/S, DNS, SMB, TCP, Gopher) | 80 | 4321 (Qt GUI) |
+| Container | Role | C2 Port (Internal) | Operator / Control Port | Egress Transports |
+|---|---|:---:|:---:|:---|
+| **`redirector`** | Apache header-based proxy + decoy CDN | 80 (published) | — | HTTP / HTTPS Proxy |
+| **`meridian`** | Dual-transport Go stdlib C2 + async Python daemon | 8080 (internal) | 5353/udp (DNS) | **HTTP(S) / WS + Chunked DNS TXT** |
+| **`havoc`** | Havoc teamserver (C++ Demon evasion payload) | 80 | 40056 (Qt GUI) | HTTP / HTTPS / SMB |
+| **`sliver`** | Sliver teamserver (Go implant + extensions) | 80 | 31337 (CLI / RPC) | mTLS / WireGuard / HTTP / DNS |
+| **`adaptix`** | Adaptix teamserver (Multiplayer Go + Qt GUI) | 80 | 4321 (Qt GUI) | HTTP/S / DNS / SMB / TCP Gopher |
+| **`mythic`** | Mythic server + HTTP profile microservices | 80 | 7443 (Web UI) | Multi-agent profiles (Apollo, Poseidon) |
 
-All C2 frameworks share the `c2_core` internal network; only the redirector is
-exposed. Configuration lives in `Docker/.env` (copy from `.env.example`).
+---
 
-### Adaptix C2 — Go-based post-exploitation framework
+## Framework Highlights
 
-Adaptix is a Go/C++ post-exploitation framework with a Qt GUI client. Features:
-- **Listeners:** HTTP/S, DNS/DoH, SMB, TCP Beacon + TCP/mTLS Gopher
-- **Multi-user:** server/client architecture with multiplayer support
-- **Extensible:** plugin-based agents and listeners via Extension-Kit
-- **Cross-platform:** Windows, Linux, macOS agent support
-- **BOF support:** Beacon Object Files + async BOF execution
+### 1. Meridian C2 — Lightweight Dual-Transport & DNS Tunneling
+- **Zero-Dependency Implant**: Pure Go (`parallax`), stdlib only (`crypto/ecdh`, `crypto/aes`). Compiles anywhere in seconds.
+- **Native DNS TXT Tunneling**: Uppercase Base32 chunking (36-byte packets) over UDP port 5353. Ideal for restricted network egress practice and DFIR-Nexus DNS telemetry evaluation.
+- **Wire Cryptography**: X25519 Diffie-Hellman + HKDF-SHA256 derivation + AES-256-GCM AEAD envelopes binding messages to session IDs.
+- **Encrypted-at-Rest Results**: SQLite results encrypted under the server master key.
 
-The Adaptix teamserver runs behind the redirector; the Qt GUI client connects
-directly to the published operator port (default `4321`). Build from source
-via `--profile adaptix`. First build takes ~5-10 minutes.
+### 2. Havoc C2 — Windows Endpoint Evasion
+- C++ Demon payload with indirect syscalls, API hashing, in-memory execution, and sleep obfuscation (Ekko/Zilean).
+- Connects to the published teamserver port (`40056`) using the Havoc Qt5 client.
 
-## Requirements
+### 3. Sliver C2 — General Lateral Movement
+- Feature-rich Go implants supporting Armory extensions, BOFs, and pivot listeners (TCP / SMB).
+- Controlled via `sliver-client` on port `31337`.
 
-| Resource | Minimum |
-|----------|:-------:|
-| RAM | 8 GB (redirector + 4 frameworks + overhead) |
-| Disk | 25 GB (images + volumes + Adaptix build) |
-| Docker | Docker Desktop 4.x / Compose v2 |
-| Network | vmnet2 (192.168.77.0/24) — shared with CADRE |
+### 4. Adaptix C2 — Multiplayer Operations
+- Go/C++ post-exploitation framework with a Qt GUI client (`:4321`).
+- Multi-listener matrix: HTTP/S, DNS/DoH, SMB, TCP Beacon + TCP/mTLS Gopher.
 
-**Optional (for Loki C2):** Azure Storage Account + SAS token, outbound to
-`*.blob.core.windows.net`.
+---
 
-## Repository Layout
+## Using With CADRE
 
-```
-C2Stack/
-├── README.md
-├── LICENSE               MIT
-├── .gitignore
-├── assets/               Logo (SVG) + lint config
-├── Docker/               Docker-first deployment
-│   ├── docker-compose.yml
-│   ├── .env.example
-│   ├── docker-bootstrap.ps1 / .sh
-│   ├── redirector/       Apache image (header routing + decoy)
-│   ├── sliver/           sliver-server image
-│   ├── havoc/            Havoc teamserver image
-│   ├── adaptix/          Adaptix teamserver image (builds from source)
-│   └── mythic/           (optional) Mythic data mount
-└── Doc/
-    └── Docker.md         Docker architecture + practice guide
-```
+The CADRE lab VMs (`dc01`/`dc02`/`dc03`/`mbr01`/`mbr02`/`linux01`/`ws01` on `192.168.77.0/24`) are your practice targets:
 
-## License
+1. Start the stack (above). Note the Docker host IP on `vmnet2`.
+2. Generate an implant or use the precompiled Meridian binaries in `/opt/meridian/payloads/`.
+3. Point callbacks to `http://<host-ip-on-vmnet2>:<REDIRECTOR_HTTP_PORT>/<prefix>` with header `X-Request-ID: cadre-c2` (or DNS to port `5353`).
+4. Watch callbacks arrive through the redirector into the corresponding C2 framework.
 
-MIT
+See [`Doc/Docker.md`](Doc/Docker.md) for listener tuning, reverse proxy routing, and operator runbooks.

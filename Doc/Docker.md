@@ -16,7 +16,7 @@ The practice build should still preserve these behaviors:
 
 - Victim-facing entry point remains separate from the real C2 backend.
 - Redirector logic still requires a valid header before proxying to the backend.
-- Mythic, Sliver, Havoc, and Adaptix remain usable as distinct frameworks.
+- Mythic, Sliver, Havoc, Adaptix, and Meridian remain usable as distinct frameworks.
 - Loki remains optional and separate because it already uses Azure Blob Storage rather than the redirector path.
 - Operator state should persist across restarts.
 
@@ -25,9 +25,11 @@ The practice build should still preserve these behaviors:
 These components are reasonable Docker candidates:
 
 - Redirector Apache proxy.
+- Meridian C2 daemon (HTTP + DNS TXT listeners).
 - Mythic teamserver and its supporting services.
 - Sliver server.
 - Havoc teamserver.
+- Adaptix teamserver.
 - Supporting web UI and service glue.
 
 These can also be mounted into volumes so they survive restart without rebuilding the image.
@@ -47,7 +49,7 @@ If the goal is realistic operator practice, the missing isolation matters more t
 Use a single Docker host and split the lab into three logical layers:
 
 1. `redirector` container on the victim-facing network.
-2. `mythic`, `sliver`, and `havoc` containers on the back-end network.
+2. `meridian`, `sliver`, `havoc`, `adaptix`, and `mythic` containers on the back-end network.
 3. One operator workstation, either as the host itself or as a lightweight Kali VM, for tools and hands-on interaction.
 
 This keeps the deployment quick without forcing every tool into a separate container.
@@ -58,9 +60,11 @@ This keeps the deployment quick without forcing every tool into a separate conta
 Host
 ├─ docker compose
 │  ├─ redirector
-│  ├─ mythic
+│  ├─ meridian
 │  ├─ sliver
-│  └─ havoc
+│  ├─ havoc
+│  ├─ adaptix (optional profile)
+│  └─ mythic (optional profile)
 └─ optional operator VM or host shell
    └─ nmap, hashcat, certipy, netexec, smb tools, browser access
 ```
@@ -106,13 +110,13 @@ That gives the best speed-to-learning ratio without forcing the whole stack into
 ## Implementation (Docker-first)
 
 The stack is implemented under `C2Stack/Docker/`. The Kali VM is the operator
-workstation; the redirector and the four C2 frameworks run as containers.
+workstation; the redirector and the five C2 frameworks run as containers.
 
 ### Layout
 
 ```
 C2Stack/Docker/
-├── docker-compose.yml        # redirector + sliver + havoc (+ mythic/adaptix profiles)
+├── docker-compose.yml        # redirector + meridian + sliver + havoc (+ mythic/adaptix profiles)
 ├── .env.example              # copy to .env and adjust
 ├── docker-bootstrap.ps1      # Windows host bootstrap (Docker Desktop)
 ├── docker-bootstrap.sh       # Linux/macOS host bootstrap
@@ -122,6 +126,11 @@ C2Stack/Docker/
 │   │   ├── c2stack.conf.template   # header-based routing, env-driven
 │   │   └── decoy.html              # CloudEdge CDN decoy page
 │   └── entrypoint.sh
+├── meridian/                 # zero-dep Go implant + async Python C2 daemon
+│   ├── Dockerfile            # multi-stage build (golang builder + python server)
+│   ├── entrypoint.sh         # starts HTTP (:8080) & DNS (:5353) listeners
+│   ├── meridian/             # python server package
+│   └── implant/              # parallax Go implant source (stdlib only)
 ├── sliver/Dockerfile         # prebuilt sliver-server, daemon mode
 ├── havoc/Dockerfile          # builds teamserver from source
 ├── adaptix/Dockerfile        # builds Adaptix teamserver + extenders from source

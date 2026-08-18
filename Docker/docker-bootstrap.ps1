@@ -70,6 +70,8 @@ Write-Host @"
   - Sliver operator port         : ${env:SLIVER_CTRL_PORT:-31337}
   - Havoc teamserver port        : ${env:HAVOC_TS_PORT:-40056}
   - Adaptix teamserver port      : ${env:ADAPTIX_TS_PORT:-4321}  (Qt GUI client)
+  - Meridian DNS Listener        : <host-ip-on-vmnet2>:${env:MERIDIAN_DNS_PORT:-5353}/udp (DNS Covert Channel)
+  - Meridian HTTP Callback       : http://<host-ip-on-vmnet2>:${env:REDIRECTOR_HTTP_PORT:-80}${env:MERIDIAN_URI_PREFIX:-/gateway/v1/telemetry}
 
   Verify the redirector decoy page (no header -> CloudEdge CDN):
     curl http://<host-ip-on-vmnet2>:${env:REDIRECTOR_HTTP_PORT:-80}/
@@ -80,6 +82,10 @@ Write-Host @"
 
   Adaptix operator connection (Qt GUI client on Kali):
     Configure endpoint to <host-ip-on-vmnet2>:${env:ADAPTIX_TS_PORT:-4321}
+
+  Meridian console / payload execution (on target):
+    Linux:   ./parallax-linux-amd64
+    Windows: parallax-windows-amd64.exe (DNS: c2.cadre.local or HTTP via redirector)
 "@ -ForegroundColor White
 
 Pop-Location

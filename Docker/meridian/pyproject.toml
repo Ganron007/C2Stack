@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "meridian"
+version = "0.1.0"
+description = "Meridian - modular command & control framework for authorized red team operations"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "s1d9e"}]
+keywords = [
+    "c2",
+    "red-team",
+    "command-and-control",
+    "security",
+    "beacon",
+    "offensive",
+]
+dependencies = [
+    "aiohttp>=3.9.0",
+    "dnslib>=0.9.24",
+    "cryptography>=42.0.0",
+    "rich>=13.0.0",
+    "click>=8.1.0",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.4.0",
+]
+
+[project.scripts]
+meridian = "meridian.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["meridian*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+exclude = [".venv", "implant"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]

@@ -1,0 +1,277 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="1220" viewBox="0 0 960 1220" role="img" aria-label="C2Stack Multi-Framework C2 and Apache Header-Aware Redirector Architecture Flow">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#140902"/>
+      <stop offset="40%" stop-color="#0a0401"/>
+      <stop offset="100%" stop-color="#040200"/>
+    </linearGradient>
+
+    <!-- Top Ambient Amber Glow -->
+    <radialGradient id="topGlow" cx="50%" cy="0%" r="50%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#f59e0b" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Card Backgrounds -->
+    <linearGradient id="cardTarget" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#1e0e03"/>
+      <stop offset="100%" stop-color="#120701"/>
+    </linearGradient>
+
+    <linearGradient id="cardRedir" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#281504"/>
+      <stop offset="100%" stop-color="#180b02"/>
+    </linearGradient>
+
+    <linearGradient id="cardCore" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#241103"/>
+      <stop offset="100%" stop-color="#140801"/>
+    </linearGradient>
+
+    <linearGradient id="cardMatrix" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#2d1705"/>
+      <stop offset="100%" stop-color="#190b02"/>
+    </linearGradient>
+
+    <linearGradient id="cardOp" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#081e28"/>
+      <stop offset="100%" stop-color="#041117"/>
+    </linearGradient>
+
+    <!-- Brand Gradients -->
+    <linearGradient id="amberBrand" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="50%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#b45309"/>
+    </linearGradient>
+
+    <linearGradient id="emeraldGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+
+    <linearGradient id="cyanGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+
+    <linearGradient id="redGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#f87171"/>
+      <stop offset="100%" stop-color="#dc2626"/>
+    </linearGradient>
+
+    <!-- Glowing Filters -->
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#000000" flood-opacity="0.8"/>
+    </filter>
+    <filter id="glowAmber" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#f59e0b" flood-opacity="0.5"/>
+    </filter>
+    <filter id="glowGreen" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#10b981" flood-opacity="0.5"/>
+    </filter>
+
+    <!-- Arrow Markers -->
+    <marker id="arrDownAmber" markerWidth="10" markerHeight="10" refX="5" refY="7" orient="auto">
+      <polygon points="0 0, 10 0, 5 8" fill="#f59e0b"/>
+    </marker>
+    <marker id="arrDownGreen" markerWidth="10" markerHeight="10" refX="5" refY="7" orient="auto">
+      <polygon points="0 0, 10 0, 5 8" fill="#34d399"/>
+    </marker>
+    <marker id="arrDownCyan" markerWidth="10" markerHeight="10" refX="5" refY="7" orient="auto">
+      <polygon points="0 0, 10 0, 5 8" fill="#38bdf8"/>
+    </marker>
+  </defs>
+
+  <!-- Base Canvas Background -->
+  <rect width="960" height="1220" fill="url(#bgGrad)"/>
+  <rect width="960" height="420" fill="url(#topGlow)"/>
+
+  <!-- ========================================================================= -->
+  <!-- HEADER &amp; LOGO                                                             -->
+  <!-- ========================================================================= -->
+  <g transform="translate(480, 48)">
+    <!-- Shield Logo Icon -->
+    <g transform="translate(-280, -26) scale(0.38)">
+      <path d="M55 0 L110 18 V62 C110 100 86 128 55 145 C24 128 0 100 0 62 V18 Z" fill="url(#amberBrand)" stroke="#451a03" stroke-width="3"/>
+      <circle cx="55" cy="50" r="10" fill="#ffffff" opacity="0.95"/>
+      <circle cx="30" cy="90" r="7.5" fill="#ffffff" opacity="0.95"/>
+      <circle cx="55" cy="95" r="7.5" fill="#ffffff" opacity="0.95"/>
+      <circle cx="80" cy="90" r="7.5" fill="#ffffff" opacity="0.95"/>
+      <line x1="55" y1="50" x2="30" y2="90" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" opacity="0.9"/>
+      <line x1="55" y1="50" x2="55" y2="95" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" opacity="0.9"/>
+      <line x1="55" y1="50" x2="80" y2="90" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" opacity="0.9"/>
+    </g>
+    <text x="24" y="8" text-anchor="middle" font-family="'Segoe UI', -apple-system, sans-serif" font-size="32" font-weight="900" letter-spacing="0.5">
+      <tspan fill="url(#amberBrand)">C2STACK</tspan>
+      <tspan fill="#ffffff" font-weight="800"> | ARCHITECTURE FLOW</tspan>
+    </text>
+    <text x="0" y="38" text-anchor="middle" font-family="'Segoe UI', -apple-system, sans-serif" font-size="15" font-weight="600" fill="#fde68a">
+      Header-Aware Redirector · Multi-Framework Matrix (Havoc · Sliver · Mythic · Adaptix · Meridian)
+    </text>
+  </g>
+
+  <!-- ========================================================================= -->
+  <!-- STEP 1: CADRE LAB TARGET RANGE (y=110, h=145)                             -->
+  <!-- ========================================================================= -->
+  <g transform="translate(90, 110)" filter="url(#shadow)">
+    <rect x="0" y="0" width="780" height="145" rx="14" fill="url(#cardTarget)" stroke="#b45309" stroke-width="2" filter="url(#glowAmber)"/>
+    
+    <!-- Stage Header Badge -->
+    <circle cx="28" cy="28" r="16" fill="#b45309"/>
+    <text x="28" y="34" text-anchor="middle" font-family="sans-serif" font-size="16" font-weight="900" fill="#ffffff">1</text>
+    
+    <text x="56" y="34" font-family="sans-serif" font-size="18.5" font-weight="900" fill="#ffffff">CADRE LAB TARGET RANGE (192.168.77.0/24)</text>
+    <rect x="635" y="14" width="130" height="28" rx="6" fill="#451a03" stroke="#f59e0b" stroke-width="1.2"/>
+    <text x="700" y="32" text-anchor="middle" font-family="sans-serif" font-size="12" font-weight="800" fill="#fde68a">VICTIMS</text>
+
+    <!-- Sub-bullets -->
+    <g transform="translate(24, 60)">
+      <text x="0" y="16" font-family="sans-serif" font-size="14.5" font-weight="600" fill="#fef3c7">• <strong>Target Nodes:</strong> `dc01` · `dc02` · `dc03` (Forests) · `mbr01` · `mbr02` · `linux01` · `ws01` (Windows 11)</text>
+      <text x="0" y="42" font-family="sans-serif" font-size="14.5" font-weight="600" fill="#fef3c7">• <strong>Active Implants:</strong> Havoc Demon · Sliver Beacon · Adaptix Beacon · <strong>Meridian Parallax (Go Stdlib)</strong></text>
+      <text x="0" y="68" font-family="sans-serif" font-size="14.5" font-weight="700" fill="#34d399">• Callbacks: HTTP/S to `:80` with header `X-Request-ID: cadre-c2` or UDP DNS to `:5353`</text>
+    </g>
+  </g>
+
+  <!-- Connector 1 -> 2 -->
+  <g transform="translate(480, 255)">
+    <line x1="0" y1="0" x2="0" y2="35" stroke="#f59e0b" stroke-width="3.5" marker-end="url(#arrDownAmber)"/>
+    <rect x="-145" y="8" width="290" height="22" rx="4" fill="#241103" stroke="#b45309" stroke-width="1"/>
+    <text x="0" y="24" text-anchor="middle" font-family="sans-serif" font-size="11.5" font-weight="800" fill="#fde68a">HTTP Callbacks + UDP DNS Ingress</text>
+  </g>
+
+  <!-- ========================================================================= -->
+  <!-- STEP 2: APACHE REDIRECTOR &amp; DECOY CDN (y=295, h=175)                      -->
+  <!-- ========================================================================= -->
+  <g transform="translate(90, 295)" filter="url(#shadow)">
+    <rect x="0" y="0" width="780" height="175" rx="14" fill="url(#cardRedir)" stroke="#f59e0b" stroke-width="2.2" filter="url(#glowAmber)"/>
+    
+    <!-- Stage Header Badge -->
+    <circle cx="28" cy="28" r="16" fill="url(#amberBrand)"/>
+    <text x="28" y="34" text-anchor="middle" font-family="sans-serif" font-size="16" font-weight="900" fill="#0d0601">2</text>
+    
+    <text x="56" y="34" font-family="sans-serif" font-size="18.5" font-weight="900" fill="#ffffff">APACHE HEADER-AWARE REDIRECTOR &amp; DECOY CDN</text>
+    <rect x="635" y="14" width="130" height="28" rx="6" fill="#451a03" stroke="#f59e0b" stroke-width="1.2"/>
+    <text x="700" y="32" text-anchor="middle" font-family="sans-serif" font-size="12" font-weight="900" fill="#fde047">EDGE GATEWAY</text>
+
+    <!-- Sub-bullets -->
+    <g transform="translate(24, 60)">
+      <text x="0" y="16" font-family="sans-serif" font-size="14.5" font-weight="600" fill="#fef3c7">• <strong>Header Inspection:</strong> Evaluates `X-Request-ID: cadre-c2` on every incoming HTTP request</text>
+      <text x="0" y="42" font-family="sans-serif" font-size="14.5" font-weight="700" fill="#f87171">• <strong>[OPSEC] No/Invalid Header:</strong> Serves benign <strong>CloudEdge CDN Decoy Page</strong> (Shields internal C2)</text>
+      <text x="0" y="68" font-family="sans-serif" font-size="14.5" font-weight="700" fill="#34d399">• <strong>[PROXY] Valid Header:</strong> Reverse proxies request to matching backend on isolated `c2_core` network</text>
+      <text x="0" y="94" font-family="sans-serif" font-size="14" font-weight="600" fill="#fde68a">• <strong>Network Exposure:</strong> Redirector is the ONLY HTTP service exposed on `c2_edge` (Port 80)</text>
+    </g>
+  </g>
+
+  <!-- Connector 2 -> 3 -->
+  <g transform="translate(480, 470)">
+    <line x1="0" y1="0" x2="0" y2="35" stroke="#34d399" stroke-width="3.5" marker-end="url(#arrDownGreen)"/>
+    <rect x="-140" y="8" width="280" height="22" rx="4" fill="#09281a" stroke="#10b981" stroke-width="1"/>
+    <text x="0" y="24" text-anchor="middle" font-family="sans-serif" font-size="11.5" font-weight="800" fill="#34d399">✓ Verified Proxy to `c2_core`</text>
+  </g>
+
+  <!-- ========================================================================= -->
+  <!-- STEP 3: INTERNAL C2_CORE NETWORK &amp; ROUTING (y=510, h=145)                 -->
+  <!-- ========================================================================= -->
+  <g transform="translate(90, 510)" filter="url(#shadow)">
+    <rect x="0" y="0" width="780" height="145" rx="14" fill="url(#cardCore)" stroke="#d97706" stroke-width="2"/>
+    
+    <!-- Stage Header Badge -->
+    <circle cx="28" cy="28" r="16" fill="#d97706"/>
+    <text x="28" y="34" text-anchor="middle" font-family="sans-serif" font-size="16" font-weight="900" fill="#ffffff">3</text>
+    
+    <text x="56" y="34" font-family="sans-serif" font-size="18.5" font-weight="900" fill="#ffffff">INTERNAL C2_CORE NETWORK (ISOLATED BACK-CHANNEL)</text>
+    <rect x="635" y="14" width="130" height="28" rx="6" fill="#3b1d06" stroke="#f59e0b" stroke-width="1.2"/>
+    <text x="700" y="32" text-anchor="middle" font-family="sans-serif" font-size="12" font-weight="800" fill="#fde68a">NO EGRESS</text>
+
+    <!-- Sub-bullets -->
+    <g transform="translate(24, 60)">
+      <text x="0" y="16" font-family="sans-serif" font-size="14.5" font-weight="600" fill="#fef3c7">• <strong>Strict Isolation:</strong> `c2_core` has zero direct internet access — frameworks reachable only via proxy</text>
+      <text x="0" y="42" font-family="sans-serif" font-size="14.5" font-weight="600" fill="#fef3c7">• <strong>URI Routing:</strong> `/edge/cache/` (Havoc) · `/cloud/storage/` (Sliver) · `/api/v1/sync` (Adaptix) · `/cdn/media/` (Mythic)</text>
+      <text x="0" y="68" font-family="sans-serif" font-size="14.5" font-weight="700" fill="#38bdf8">• <strong>Meridian Route:</strong> `/gateway/v1/telemetry` ➔ `http://meridian:8080` + Native UDP DNS Tunneling</text>
+    </g>
+  </g>
+
+  <!-- Connector 3 -> 4 -->
+  <g transform="translate(480, 655)">
+    <line x1="0" y1="0" x2="0" y2="35" stroke="#38bdf8" stroke-width="3.5" marker-end="url(#arrDownCyan)"/>
+    <rect x="-140" y="8" width="280" height="22" rx="4" fill="#082230" stroke="#0284c7" stroke-width="1"/>
+    <text x="0" y="24" text-anchor="middle" font-family="sans-serif" font-size="11.5" font-weight="800" fill="#38bdf8">Framework Tasking &amp; Handlers</text>
+  </g>
+
+  <!-- ========================================================================= -->
+  <!-- STEP 4: 5-FRAMEWORK C2 MATRIX (y=695, h=180)                              -->
+  <!-- ========================================================================= -->
+  <g transform="translate(90, 695)" filter="url(#shadow)">
+    <rect x="0" y="0" width="780" height="180" rx="14" fill="url(#cardMatrix)" stroke="#f59e0b" stroke-width="2.2" filter="url(#glowAmber)"/>
+    
+    <!-- Stage Header Badge -->
+    <circle cx="28" cy="28" r="16" fill="url(#amberBrand)"/>
+    <text x="28" y="34" text-anchor="middle" font-family="sans-serif" font-size="16" font-weight="900" fill="#0d0601">4</text>
+    
+    <text x="56" y="34" font-family="sans-serif" font-size="18.5" font-weight="900" fill="#ffffff">CONTAINERIZED C2 FRAMEWORK MATRIX</text>
+    <rect x="635" y="14" width="130" height="28" rx="6" fill="#451a03" stroke="#f59e0b" stroke-width="1.2"/>
+    <text x="700" y="32" text-anchor="middle" font-family="sans-serif" font-size="12" font-weight="900" fill="#fde047">BACKENDS</text>
+
+    <!-- Sub-bullets -->
+    <g transform="translate(24, 60)">
+      <text x="0" y="16" font-family="sans-serif" font-size="14.5" font-weight="600" fill="#fef3c7">• <strong>Havoc C2:</strong> C++ Demon payload · In-memory evasion · Direct Syscalls · Sleep Masking (Ekko/Zilean)</text>
+      <text x="0" y="42" font-family="sans-serif" font-size="14.5" font-weight="600" fill="#fef3c7">• <strong>Sliver C2:</strong> Cross-platform Go implants · Armory extensions · BOF execution · mTLS / WireGuard</text>
+      <text x="0" y="68" font-family="sans-serif" font-size="14.5" font-weight="600" fill="#fef3c7">• <strong>Adaptix &amp; Mythic:</strong> Go/C++ Multiplayer teamserver (Qt GUI) &amp; Enterprise microservice architecture</text>
+      <text x="0" y="94" font-family="sans-serif" font-size="14.5" font-weight="700" fill="#34d399">• <strong>Meridian C2:</strong> Ultra-lightweight Go stdlib binary · <strong>Chunked DNS TXT C2</strong> · X25519/AES-GCM wire crypto</text>
+    </g>
+  </g>
+
+  <!-- Connector 4 -> 5 -->
+  <g transform="translate(480, 875)">
+    <line x1="0" y1="0" x2="0" y2="35" stroke="#38bdf8" stroke-width="3.5" marker-end="url(#arrDownCyan)"/>
+    <rect x="-140" y="8" width="280" height="22" rx="4" fill="#082230" stroke="#0284c7" stroke-width="1"/>
+    <text x="0" y="24" text-anchor="middle" font-family="sans-serif" font-size="11.5" font-weight="800" fill="#38bdf8">Operator Control Channels</text>
+  </g>
+
+  <!-- ========================================================================= -->
+  <!-- STEP 5: OPERATOR WORKSTATION (KALI VM / HOST) (y=915, h=155)              -->
+  <!-- ========================================================================= -->
+  <g transform="translate(90, 915)" filter="url(#shadow)">
+    <rect x="0" y="0" width="780" height="155" rx="14" fill="url(#cardOp)" stroke="#38bdf8" stroke-width="2.2"/>
+    
+    <!-- Stage Header Badge -->
+    <circle cx="28" cy="28" r="16" fill="url(#cyanGrad)"/>
+    <text x="28" y="34" text-anchor="middle" font-family="sans-serif" font-size="16" font-weight="900" fill="#041c26">5</text>
+    
+    <text x="56" y="34" font-family="sans-serif" font-size="18.5" font-weight="900" fill="#ffffff">OPERATOR WORKSTATION (KALI VM / HOST TOOLING)</text>
+    <rect x="635" y="14" width="130" height="28" rx="6" fill="#0a2a3a" stroke="#38bdf8" stroke-width="1.2"/>
+    <text x="700" y="32" text-anchor="middle" font-family="sans-serif" font-size="12" font-weight="800" fill="#38bdf8">MANAGEMENT</text>
+
+    <!-- Sub-bullets -->
+    <g transform="translate(24, 60)">
+      <text x="0" y="16" font-family="sans-serif" font-size="14.5" font-weight="600" fill="#bae6fd">• <strong>Published Control Ports:</strong> Havoc (:40056) · Sliver (:31337) · Adaptix Qt (:4321) · Mythic (:7443)</text>
+      <text x="0" y="42" font-family="sans-serif" font-size="14.5" font-weight="600" fill="#bae6fd">• <strong>Meridian Control:</strong> Rich interactive TUI console &amp; encrypted-at-rest SQLite session ledger</text>
+      <text x="0" y="68" font-family="sans-serif" font-size="14.5" font-weight="700" fill="#34d399">• Full attack lifecycle control: Staging, Lateral Movement, Credential Access, and Exfiltration</text>
+    </g>
+  </g>
+
+  <!-- ========================================================================= -->
+  <!-- LEFT RETURN CONDUIT (C2 Tasking &amp; Callback Stream: Step 5 -> Step 1)      -->
+  <!-- ========================================================================= -->
+  <path d="M 90 990 L 35 990 L 35 185 L 85 185" fill="none" stroke="#f59e0b" stroke-width="3.5" stroke-dasharray="10 5"/>
+  <polygon points="85,185 70,175 70,195" fill="#f59e0b"/>
+
+  <!-- Vertical Feedback Tag -->
+  <g transform="translate(25, 580) rotate(-90)">
+    <rect x="-160" y="-12" width="320" height="24" rx="4" fill="#241103" stroke="#f59e0b" stroke-width="1.2"/>
+    <text x="0" y="4" text-anchor="middle" font-family="sans-serif" font-size="11.5" font-weight="800" fill="#fde68a" letter-spacing="0.5">
+      ↻ C2 TASKING &amp; TELEMETRY STREAM
+    </text>
+  </g>
+
+  <!-- ========================================================================= -->
+  <!-- FOOTER                                                                    -->
+  <!-- ========================================================================= -->
+  <g transform="translate(480, 1095)">
+    <text text-anchor="middle" font-family="'Segoe UI', sans-serif" font-size="13.5" font-weight="600" fill="#f59e0b">
+      Docker-First C2 Architecture · Apache Reverse Proxy · Header Validation · Multi-Framework Matrix
+    </text>
+  </g>
+</svg>
