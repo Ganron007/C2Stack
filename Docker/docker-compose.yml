@@ -78,6 +78,7 @@ services:
       - "${SLIVER_CTRL_PORT}:31337"
     networks:
       - c2_core
+      - c2_edge
     restart: unless-stopped
 
   # ------------------------------------------------------------------

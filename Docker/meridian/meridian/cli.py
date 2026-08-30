@@ -7,12 +7,19 @@ App instance (listeners run in background threads).
     $ meridian listener add -t http -p 8080 -n main
     $ meridian start
     $ meridian report -o report.md
+
+Automation hooks (machine-readable output for external orchestrators):
+    $ meridian sessions --json
+    $ meridian results --json [SESSION]
+    $ meridian exec-cmd --json <session> <cmd...>
 """
 
 from __future__ import annotations
 
 import base64
+import json
 import shlex
+import sys
 import threading
 import time
 
@@ -358,9 +365,23 @@ def main(ctx: click.Context, state_dir: str | None) -> None:
 
 @main.command()
 @click.pass_obj
-def start(app: App) -> None:
+def start(app: App):
     """Start the interactive console."""
     run_console(app)
+
+
+@main.command()
+@click.pass_obj
+def serve(app: App):
+    """Start all configured listeners in the foreground (daemon mode)."""
+    started = 0
+    for cfg in app.config.listeners:
+        if cfg.name not in app.listeners:
+            app.start_listener(cfg)
+            started += 1
+    click.echo(f"meridian serve: {started} listener(s) started")
+    while True:
+        time.sleep(1_000_000)
 
 
 @main.command()
@@ -401,24 +422,66 @@ def listener_start(app: App, name: str):
 
 
 @main.command()
+@click.option("--json", "as_json", is_flag=True, help="emit a JSON array (automation)")
 @click.pass_obj
-def sessions(app: App):
+def sessions(app: App, as_json: bool):
     """List sessions."""
+    if as_json:
+        json.dump([s.to_dict(full=True) for s in app.sessions.list()], sys.stdout)
+        sys.stdout.write("\n")
+        return
     console.print(_session_table(app))
 
 
 @main.command()
 @click.argument("session")
 @click.argument("command", nargs=-1)
+@click.option("--json", "as_json", is_flag=True, help="emit JSON (automation)")
 @click.pass_obj
-def exec_cmd(app: App, session: str, command: tuple[str]):
+def exec_cmd(app: App, session: str, command: tuple[str], as_json: bool):
     """Queue a command for a session."""
     match = [s for s in app.sessions.list() if s.id.startswith(session)]
     if not match:
-        click.echo("no such session", err=True)
+        if as_json:
+            json.dump({"error": "no such session"}, sys.stdout)
+            sys.stdout.write("\n")
+        else:
+            click.echo("no such session", err=True)
         return
     task = app.tasks.create(match[0].id, "builtin/exec", {"command": " ".join(command)})
-    click.echo(f"queued {task.id[:8]}")
+    if as_json:
+        json.dump({"queued": task.id, "session_id": match[0].id}, sys.stdout)
+        sys.stdout.write("\n")
+    else:
+        click.echo(f"queued {task.id[:8]}")
+
+
+@main.command()
+@click.argument("session", required=False)
+@click.option("--json", "as_json", is_flag=True, help="emit a JSON array (automation)")
+@click.pass_obj
+def results(app: App, session: str | None, as_json: bool):
+    """List task results (optionally for one session)."""
+    results = app.tasks.results(session)
+    if as_json:
+        rows = []
+        for r in results:
+            task = app.tasks.get(r.task_id)
+            rows.append({
+                "id": r.id,
+                "task_id": r.task_id,
+                "session_id": r.session_id,
+                "module": task.module if task else "?",
+                "status": r.status,
+                "exit_code": r.exit_code,
+                "ts": r.ts,
+                "stdout_b64": base64.b64encode(r.stdout).decode(),
+                "stderr_b64": base64.b64encode(r.stderr).decode(),
+            })
+        json.dump(rows, sys.stdout)
+        sys.stdout.write("\n")
+        return
+    _cmd_results(app, session)
 
 
 @main.command()
