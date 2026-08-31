@@ -8,10 +8,14 @@ ENV DEBIAN_FRONTEND=noninteractive
 # prefers the cache (bind-mounted from the build context) and otherwise
 # downloads the official v1.7.6 release from GitHub — both paths end with a
 # pinned SHA256 verification, so the image content is identical either way.
+# git must stay installed at runtime: sliver's garble subset applies linker
+# patches via `git apply`, and without git every `generate` fails with
+# "failed to 'git apply' patches" (exit status 1).
 RUN apt-get update -qq \
     && apt-get install -y -qq --no-install-recommends \
         ca-certificates \
         curl \
+        git \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
