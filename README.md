@@ -11,8 +11,6 @@
   <a href="https://github.com/Ganron007/C2Stack"><img src="https://img.shields.io/badge/DNS%20C2-Meridian%20Tunnel-green.svg" alt="DNS C2"></a>
 </p>
 
-Part of the [CADRE](https://github.com/Ganron007/CADRE) platform — Docker-first C2 training (Havoc, Sliver, Meridian, Mythic, Adaptix) with lab callbacks into the CADRE range.
-
 > [!NOTE]
 > **Docker-First C2 Framework Training Environment** — a containerized practice range that turns any lab into a safe, multi-tier C2 playground with zero VM management overhead for backends.
 
