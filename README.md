@@ -11,10 +11,10 @@
   <a href="https://github.com/Ganron007/C2Stack"><img src="https://img.shields.io/badge/DNS%20C2-Meridian%20Tunnel-green.svg" alt="DNS C2"></a>
 </p>
 
+C2Stack runs a header-aware **Apache redirector** in front of five C2 frameworks as Docker containers. Your existing **Kali VM** is the operator workstation — it runs the C2 clients and attack tooling, reaching the frameworks through published control ports.
+
 > [!NOTE]
 > **Docker-First C2 Framework Training Environment** — a containerized practice range that turns any lab into a safe, multi-tier C2 playground with zero VM management overhead for backends.
-
-C2Stack runs a header-aware **Apache redirector** in front of five C2 frameworks as Docker containers. Your existing **Kali VM** is the operator workstation — it runs the C2 clients and attack tooling, reaching the frameworks through published control ports.
 
 - **Meridian + Sliver + Havoc** — start by default. No extra flags needed.
 - **Mythic** — profile-gated (`--profile mythic`). Pulls upstream image.
