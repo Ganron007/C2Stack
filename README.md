@@ -13,12 +13,12 @@
 
 C2Stack runs a header-aware **Apache redirector** in front of five C2 frameworks as Docker containers. Your existing **Kali VM** is the operator workstation — it runs the C2 clients and attack tooling, reaching the frameworks through published control ports.
 
-> [!NOTE]
-> **Docker-First C2 Framework Training Environment** — a containerized practice range that turns any lab into a safe, multi-tier C2 playground with zero VM management overhead for backends.
-
 - **Meridian + Sliver + Havoc** — start by default. No extra flags needed.
 - **Mythic** — profile-gated (`--profile mythic`). Pulls upstream image.
 - **Adaptix** — profile-gated (`--profile adaptix`). Builds from source (~5 min first run).
+
+> [!NOTE]
+> **Docker-First C2 Framework Training Environment** — a containerized practice range that turns any lab into a safe, multi-tier C2 playground with zero VM management overhead for backends.
 
 ---
 
