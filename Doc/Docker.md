@@ -17,7 +17,8 @@ The practice build should still preserve these behaviors:
 - Victim-facing entry point remains separate from the real C2 backend.
 - Redirector logic still requires a valid header before proxying to the backend.
 - Mythic, Sliver, Havoc, Adaptix, and Meridian remain usable as distinct frameworks.
-- Loki remains optional and separate because it already uses Azure Blob Storage rather than the redirector path.
+- Loki-style "living off the cloud" C2 is *not implemented in this repo*; all C2Stack
+  agents egress through the redirector (HTTP) or the Meridian DNS listener.
 - Operator state should persist across restarts.
 
 ## What Can Be Containerized

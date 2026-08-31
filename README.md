@@ -37,8 +37,7 @@ C2Stack runs a header-aware **Apache redirector** in front of five C2 frameworks
    - **Valid Header**: Proxies to the matching C2 container on the isolated `c2_core` network based on the URI prefix.
    - **Missing / Invalid Header**: Serves a benign **CloudEdge CDN Decoy Page** (shielding the teamservers from scanners and incident responders).
 3. **Network Isolation**: The C2 containers live on an internal `c2_core` network with **zero direct internet egress** and are only reachable through the redirector.
-4. **Loki C2 (Out-of-Band Cloud Simulation)**:
-   Loki uses Azure Storage Blob as its C2 channel — agents talk directly to Azure, bypassing the redirector entirely. Best suited for Azure hybrid AD environments.
+4. **Out-of-band cloud C2 (Loki-style Azure Blob)**: *not part of this stack* — all C2Stack agents egress through the redirector (HTTP) or the Meridian DNS listener.
 
 ---
 

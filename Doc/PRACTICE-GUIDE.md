@@ -81,7 +81,7 @@ In modern adversary simulation, red teaming, and threat hunting, **Command and C
 | **Sliver** | Lateral Movement & Armory | Go / C# / Rust Implants | mTLS / WireGuard / HTTP | Go CLI / gRPC | General campaign operations & post-exploitation |
 | **Adaptix** | Multiplayer Operations | Go/C++ Beacon & Gopher | HTTP/S / DNS / SMB / TCP | C++ Qt5 Desktop GUI | Multi-operator red team collaborations |
 | **Mythic** | Enterprise Microservices | Modular Agents (Apollo/Poseidon) | Profile-driven (HTTP/WS) | React Web Browser UI | Multi-platform enterprise simulation |
-| **Loki** | Living-off-the-Cloud | PowerShell / .NET | Azure Blob Storage | CLI / Azure SDK | Cloud-first & Azure Hybrid AD environments |
+| **Loki** *(not in this repo)* | Living-off-the-Cloud | PowerShell / .NET | Azure Blob Storage | CLI / Azure SDK | Cloud-first & Azure Hybrid AD environments |
 
 ---
 
