@@ -212,6 +212,28 @@ path**, exactly like the VM setup. Configure each framework's HTTP C2 listener t
   `MERIDIAN_HTTP=<redirector>:80`, `MERIDIAN_URI_PREFIX=/gateway/v1/telemetry`, and the
   `X-Request-ID: cadre-c2` header (defaults in `implant/main.go`).
 
+### Runtime dependency & implant-generation verification
+
+Run these after any Dockerfile/dependency change so pruned packages can't
+silently break payload generation (as happened when `git` was dropped from
+the sliver image and every `generate` failed; fixed in 93ac840):
+
+```powershell
+# Sliver — garble needs git (git apply for linker patches) + Go toolchain
+docker exec docker-sliver-1 sh -c "which git; which go"
+# verify an actual build: sliver-client -> generate (garble) succeeds
+
+# Havoc — generation compiles Demon directly with the cross-gcc + nasm
+docker exec docker-havoc-1 sh -c 'cd /tmp && printf "#include <windows.h>\nvoid main(){}" > t.c && PATH="/opt/havoc/teamserver/data/x86_64-w64-mingw32-cross/bin:$PATH" x86_64-w64-mingw32-gcc -I/opt/havoc/teamserver/payloads/Demon/include -Os -o t.exe t.c && ls t.exe'
+docker exec docker-havoc-1 sh -c 'printf "BITS 64\nsection .text\nglobal f\nf: ret\n" > t.asm && nasm -f win64 t.asm -o t.o && ls t.o'
+
+# Adaptix — teamserver runtime needs go + mingw + gcc + make + git
+docker exec docker-adaptix-1 sh -c "which go gcc make git x86_64-w64-mingw32-gcc"
+
+# Meridian — payloads are pre-built in the image (no runtime compiler needed)
+docker exec docker-meridian-1 ls /opt/meridian/payloads
+```
+
 ### Further Reading & Field Practice
 
 - See the **[Field Practice & Study Guide](PRACTICE-GUIDE.md)** for detailed lab exercises, DNS covert tunneling walk-through, and DFIR-Nexus threat hunting queries.
