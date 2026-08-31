@@ -23,8 +23,8 @@ FROM base AS builder
 
 WORKDIR /src
 
-# Copy entire Adaptix source tree
-COPY . .
+# Copy the vendored Adaptix source tree (Docker/adaptix/src)
+COPY src/ .
 
 # Build server + extenders
 RUN make server && make extenders
@@ -60,7 +60,7 @@ COPY --from=builder /src/dist/404page.html /app/404page.html
 
 RUN mkdir -p /app/data && \
     chmod +x /app/ssl_gen.sh /app/adaptixserver && \
-    printf '#!/usr/bin/env bash\nset -e\n\necho "[adaptix] Starting Adaptix C2 Server..."\nif [ ! -f /app/data/server.rsa.crt ] || [ ! -f /app/data/server.rsa.key ]; then\n    echo "[adaptix] Generating self-signed TLS certificates..."\n    cd /app/data && openssl req -x509 -nodes -newkey rsa:2048 -keyout server.rsa.key -out server.rsa.crt -days 3650 -subj "/C=US/ST=State/L=City/O=AdaptixC2/CN=localhost"\n    echo "[adaptix] Certificates generated."\nfi\necho "[adaptix] Teamserver listening on :4321 (operators), HTTP C2 via redirector on :80"\nexec /app/adaptixserver -profile /app/profile.yaml -cert /app/data/server.rsa.crt -key /app/data/server.rsa.key\n' > /app/entrypoint.sh && \
+    printf '#!/usr/bin/env bash\nset -e\n\ncd /app\nif [ ! -f /app/server.rsa.crt ] || [ ! -f /app/server.rsa.key ]; then\n    echo "[adaptix] Generating self-signed teamserver certificate..."\n    openssl req -x509 -nodes -newkey rsa:2048 -keyout /app/server.rsa.key -out /app/server.rsa.crt -days 3650 -subj "/C=US/ST=State/L=City/O=AdaptixC2/CN=localhost"\nfi\necho "[adaptix] Starting Adaptix C2 Server..."\necho "[adaptix] Teamserver listening on :4321 (operators), HTTP C2 via redirector on :80"\nexec /app/adaptixserver -profile /app/profile.yaml\n' > /app/entrypoint.sh && \
     chmod +x /app/entrypoint.sh
 
 EXPOSE 4321 80

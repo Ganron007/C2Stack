@@ -131,10 +131,10 @@ C2Stack/Docker/
 │   ├── entrypoint.sh         # starts HTTP (:8080) & DNS (:5353) listeners
 │   ├── meridian/             # python server package
 │   └── implant/              # parallax Go implant source (stdlib only)
-├── sliver/Dockerfile         # prebuilt sliver-server, daemon mode
-├── havoc/Dockerfile          # builds teamserver from source
-├── adaptix/Dockerfile        # builds Adaptix teamserver + extenders from source
-└── mythic/                   # (optional) server data mount
+├── sliver/                   # vendored v1.7.6 release binaries (SHA256-pinned) + Dockerfile
+├── havoc/                    # vendored Havoc source (GPL-3.0) + Dockerfile (toolchains baked)
+├── adaptix/                  # vendored Adaptix source (GPL-3.0) + Dockerfile (built in-repo)
+└── mythic/                   # (optional) server config mount + operator notes
 ```
 
 ### Networks
@@ -164,6 +164,21 @@ cd C2Stack/Docker
 ./docker-bootstrap.sh --all          # all four frameworks
 ```
 
+### Verified state (Aug 2026)
+
+- **Redirector** — vhost-level header+prefix routing to all 5 backends (no longer
+  `<Location>`-based); matrix tested: correct `X-Request-ID` proxies, missing/wrong
+  header falls through to the decoy page (404).
+- **Meridian** — full E2E proven through the redirector: KEX → beacon → task → result
+  (`whoami` round-trip on a Windows host implant), and the DNS transport proven
+  (chunked TXT over UDP 5353 in-container via host port 15353). All Go unit tests pass.
+- **Sliver / Havoc / Adaptix** — vendored builds verified: sliver-server up on 31337,
+  havoc teamserver up on 40056, adaptix teamserver up on 4321. Their HTTP :80 listeners
+  are configured at the operator console (see listener tuning above).
+- **Mythic** — core stack (server + postgres + rabbitmq) boots clean and healthy; API
+  alive on 17443. Installing an http C2 profile/payload type follows the upstream
+  mythic-cli flow (Linux host) — see `Docker/mythic/README.md`.
+
 ### Operator (Kali VM) next steps
 
 - Callback endpoint: `http://<host-ip-on-vmnet2>:<REDIRECTOR_HTTP_PORT>` with header
@@ -188,8 +203,13 @@ path**, exactly like the VM setup. Configure each framework's HTTP C2 listener t
 - **Adaptix** — the HTTP Beacon listener binds port `80` inside the container. Set
   the listener URI to `/api/v1/sync` to match the redirector prefix. The DNS, SMB,
   and TCP listeners operate out-of-band (not through the redirector).
-- **Meridian** — the HTTP listener binds port `8080` on `c2_core` (`/gateway/v1/telemetry`),
-  while the DNS listener listens on `0.0.0.0:5353/udp` (domain `c2.cadre.local`).
+- **Meridian** — the HTTP listener binds port `8080` on `c2_core`; it accepts both the
+  plain API paths and the redirector's `/gateway/v1/telemetry` prefixed path. The DNS
+  listener listens on `0.0.0.0:5353/udp` inside the container (domain `c2.cadre.local`);
+  the host-facing UDP port is `MERIDIAN_DNS_PORT` (default `15353` — Windows mDNS
+  occupies 5353). Implants configured for the redirector must set
+  `MERIDIAN_HTTP=<redirector>:80`, `MERIDIAN_URI_PREFIX=/gateway/v1/telemetry`, and the
+  `X-Request-ID: cadre-c2` header (defaults in `implant/main.go`).
 
 ### Further Reading & Field Practice
 

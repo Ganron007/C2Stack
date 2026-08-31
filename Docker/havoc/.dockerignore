@@ -1,0 +1,3 @@
+# Build context = Docker/havoc — only the vendored upstream tree is needed.
+*
+!src/

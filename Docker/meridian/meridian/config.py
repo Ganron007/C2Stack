@@ -24,6 +24,7 @@ class ListenerConfig:
     mTLS: bool = False  # require client certificates (https/wss)
     ca: str | None = None
     front_domains: list[str] = field(default_factory=list)  # domain fronting
+    uri_prefix: str = ""  # redirector route prefix also accepted on HTTP routes
 
 
 @dataclass
@@ -66,7 +67,10 @@ class Config:
             cfg.default_jitter = data.get("jitter", cfg.default_jitter)
             cfg.store_results = data.get("store_results", cfg.store_results)
             for li in data.get("listeners", []):
-                cfg.listeners.append(ListenerConfig(**li))
+                found = ListenerConfig(**li)
+                if not li.get("uri_prefix"):
+                    found.uri_prefix = os.environ.get("MERIDIAN_URI_PREFIX", "")
+                cfg.listeners.append(found)
         return cfg
 
     def save(self) -> None:
@@ -86,6 +90,7 @@ class Config:
                     "mTLS": li.mTLS,
                     "ca": li.ca,
                     "front_domains": li.front_domains,
+                    "uri_prefix": li.uri_prefix,
                 }
                 for li in self.listeners
             ],

@@ -88,9 +88,13 @@ class AioHttpListener(Listener):
 
     def _build_app(self) -> web.Application:
         app = web.Application(client_max_size=MAX_BODY)
-        app.router.add_post("/api/v1/kex", self.on_kex)
-        app.router.add_post("/api/v1/checkin", self.on_checkin)
+        prefix = (self.cfg.uri_prefix or "").rstrip("/")
+        routes = [("/api/v1/kex", self.on_kex), ("/api/v1/checkin", self.on_checkin)]
         app.router.add_get("/api/v1/ws", self.on_ws)
+        for path, handler in routes:
+            app.router.add_post(path, handler)
+            if prefix:
+                app.router.add_post(prefix + path, handler)
         return app
 
     # ------------------------------------------------------------------ run

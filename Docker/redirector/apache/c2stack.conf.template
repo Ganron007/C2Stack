@@ -12,45 +12,33 @@
         Require all granted
     </Directory>
 
+    # ----- Vhost-level routing: header + prefix match => proxy to backend -----
+    RewriteEngine On
+
     # ----- Mythic C2 -----
-    <Location "${MYTHIC_URI_PREFIX}">
-        Require all granted
-        RewriteEngine On
-        RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$
-        RewriteRule ^(.*)$ http://${MYTHIC_BACKEND_HOST}:${MYTHIC_BACKEND_PORT}/$1 [P,L]
-    </Location>
+    RewriteCond %{REQUEST_URI} ^${MYTHIC_URI_PREFIX}
+    RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$
+    RewriteRule ^(.*)$ http://${MYTHIC_BACKEND_HOST}:${MYTHIC_BACKEND_PORT}$1 [P,L]
 
     # ----- Sliver C2 -----
-    <Location "${SLIVER_URI_PREFIX}">
-        Require all granted
-        RewriteEngine On
-        RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$
-        RewriteRule ^(.*)$ http://${SLIVER_BACKEND_HOST}:${SLIVER_BACKEND_PORT}/$1 [P,L]
-    </Location>
+    RewriteCond %{REQUEST_URI} ^${SLIVER_URI_PREFIX}
+    RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$
+    RewriteRule ^(.*)$ http://${SLIVER_BACKEND_HOST}:${SLIVER_BACKEND_PORT}$1 [P,L]
 
     # ----- Havoc C2 -----
-    <Location "${HAVOC_URI_PREFIX}">
-        Require all granted
-        RewriteEngine On
-        RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$
-        RewriteRule ^(.*)$ http://${HAVOC_BACKEND_HOST}:${HAVOC_BACKEND_PORT}/$1 [P,L]
-    </Location>
+    RewriteCond %{REQUEST_URI} ^${HAVOC_URI_PREFIX}
+    RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$
+    RewriteRule ^(.*)$ http://${HAVOC_BACKEND_HOST}:${HAVOC_BACKEND_PORT}$1 [P,L]
 
     # ----- Adaptix C2 -----
-    <Location "${ADAPTIX_URI_PREFIX}">
-        Require all granted
-        RewriteEngine On
-        RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$
-        RewriteRule ^(.*)$ http://${ADAPTIX_BACKEND_HOST}:${ADAPTIX_BACKEND_PORT}/$1 [P,L]
-    </Location>
+    RewriteCond %{REQUEST_URI} ^${ADAPTIX_URI_PREFIX}
+    RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$
+    RewriteRule ^(.*)$ http://${ADAPTIX_BACKEND_HOST}:${ADAPTIX_BACKEND_PORT}$1 [P,L]
 
     # ----- Meridian C2 -----
-    <Location "${MERIDIAN_URI_PREFIX}">
-        Require all granted
-        RewriteEngine On
-        RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$
-        RewriteRule ^(.*)$ http://${MERIDIAN_BACKEND_HOST}:${MERIDIAN_BACKEND_PORT}/$1 [P,L]
-    </Location>
+    RewriteCond %{REQUEST_URI} ^${MERIDIAN_URI_PREFIX}
+    RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$
+    RewriteRule ^(.*)$ http://${MERIDIAN_BACKEND_HOST}:${MERIDIAN_BACKEND_PORT}$1 [P,L]
 
     # ----- Proxy Settings -----
     ProxyRequests Off

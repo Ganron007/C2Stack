@@ -88,40 +88,57 @@ services:
     build:
       context: ./havoc
     volumes:
-      - havoc_data:/opt/havoc/teamserver/Data
+      - havoc_data:/opt/havoc/teamserver/data
     ports:
       - "${HAVOC_TS_PORT}:40056"
     networks:
       - c2_core
+      - c2_edge
     restart: unless-stopped
 
   # ------------------------------------------------------------------
   # Mythic C2 (profile-gated: enable with --profile mythic)
-  # Standard Mythic stack. The http C2 profile is exposed as `mythic`
-  # so the redirector can proxy ${MYTHIC_URI_PREFIX} to it.
-  # First run pulls images and installs the http profile via the Mythic UI.
+  # Modern Mythic (single Go server container + embedded init; external
+  # Postgres + RabbitMQ as separate services). The http C2 profile and a
+  # payload type (e.g. apollo) are operator-installed via the official
+  # mythic-cli workflow (Linux host) - see Docker/mythic/README.md.
+  # Upstream images only (Mythic ships pre-built containers, not buildable
+  # sources; base images for the other frameworks are pulled the same way).
   # ------------------------------------------------------------------
   mythic_server:
-    image: itsafeaturemythic/mythic_server:latest
+    image: ghcr.io/its-a-feature/mythic_server:v3.4.0.61
     profiles: ["mythic"]
     ports:
-      - "${MYTHIC_UI_PORT}:7443"
+      - "${MYTHIC_UI_PORT}:17443"
     volumes:
       - ./mythic/server:/mythic
     depends_on:
       - mythic_postgres
       - mythic_rabbitmq
+    environment:
+      POSTGRES_HOST: mythic_postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: mythic_db
+      POSTGRES_USER: mythic_user
+      POSTGRES_PASSWORD: mythic
+      RABBITMQ_HOST: mythic_rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USER: mythic_user
+      RABBITMQ_PASSWORD: mythic
+      MYTHIC_ADMIN_USER: mythic_admin
+      MYTHIC_ADMIN_PASSWORD: mythic
     networks:
       - c2_core
+      - c2_edge
     restart: unless-stopped
 
   mythic_postgres:
-    image: postgres:13
+    image: postgres:15
     profiles: ["mythic"]
     environment:
-      POSTGRES_USER: mythic
+      POSTGRES_USER: mythic_user
       POSTGRES_PASSWORD: mythic
-      POSTGRES_DB: mythic
+      POSTGRES_DB: mythic_db
     volumes:
       - mythic_postgres:/var/lib/postgresql/data
     networks:
@@ -129,17 +146,12 @@ services:
     restart: unless-stopped
 
   mythic_rabbitmq:
-    image: rabbitmq:3
+    image: rabbitmq:3-management
     profiles: ["mythic"]
-    networks:
-      - c2_core
-    restart: unless-stopped
-
-  mythic:
-    image: itsafeaturemythic/mythic_c2_http:latest
-    profiles: ["mythic"]
-    depends_on:
-      - mythic_rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: mythic_user
+      RABBITMQ_DEFAULT_PASS: mythic
+      RABBITMQ_DEFAULT_VHOST: mythic_vhost
     networks:
       - c2_core
     restart: unless-stopped
@@ -153,8 +165,9 @@ services:
   # ------------------------------------------------------------------
   adaptix:
     build:
-      context: ../../Integrations/AdaptixC2-main
-      dockerfile: ../../C2Stack/Docker/adaptix/Dockerfile
+      # Vendored in-tree source: Docker/adaptix/src (upstream AdaptixC2 tree,
+      # GPL-3.0). Builds server + extenders; the Qt GUI client runs on Kali.
+      context: ./adaptix
     profiles: ["adaptix"]
     volumes:
       - adaptix_data:/app/data
@@ -175,6 +188,8 @@ services:
       context: ./meridian
     volumes:
       - meridian_data:/root/.meridian
+    environment:
+      MERIDIAN_URI_PREFIX: ${MERIDIAN_URI_PREFIX}
     ports:
       - "${MERIDIAN_DNS_PORT}:5353/udp"
     networks:

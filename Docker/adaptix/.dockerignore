@@ -1,0 +1,3 @@
+# Build context = Docker/adaptix — only the vendored upstream tree is needed.
+*
+!src/

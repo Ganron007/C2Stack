@@ -32,7 +32,7 @@ C2Stack runs a header-aware **Apache redirector** in front of five C2 frameworks
 
 ### Traffic Flow & OPSEC Boundaries
 
-1. **Callback Initiation**: A payload on a victim calls back to `http://<host-ip-on-vmnet2>:<REDIRECTOR_HTTP_PORT>/<prefix>` with header `X-Request-ID: cadre-c2`, or sends UDP DNS TXT queries to `<host-ip-on-vmnet2>:5353`.
+1. **Callback Initiation**: A payload on a victim calls back to `http://<host-ip-on-vmnet2>:<REDIRECTOR_HTTP_PORT>/<prefix>` with header `X-Request-ID: cadre-c2`, or sends UDP DNS TXT queries to `<host-ip-on-vmnet2>:<MERIDIAN_DNS_PORT>` (default `15353`, mapped to the container's `5353/udp` — Windows mDNS occupies 5353 on the host).
 2. **Header Inspection**: The Apache redirector validates the header:
    - **Valid Header**: Proxies to the matching C2 container on the isolated `c2_core` network based on the URI prefix.
    - **Missing / Invalid Header**: Serves a benign **CloudEdge CDN Decoy Page** (shielding the teamservers from scanners and incident responders).
@@ -76,11 +76,11 @@ This copies `.env.example` → `.env`, builds the images, and starts the stack.
 | Container | Role | C2 Port (Internal) | Operator / Control Port | Egress Transports |
 |---|---|:---:|:---:|:---|
 | **`redirector`** | Apache header-based proxy + decoy CDN | 80 (published) | — | HTTP / HTTPS Proxy |
-| **`meridian`** | Dual-transport Go stdlib C2 + async Python daemon | 8080 (internal) | 5353/udp (DNS) | **HTTP(S) / WS + Chunked DNS TXT** |
+| **`meridian`** | Dual-transport Go stdlib C2 + async Python daemon | 8080 (internal) | 15353/udp (DNS egress) | **HTTP(S) / WS + Chunked DNS TXT** |
 | **`havoc`** | Havoc teamserver (C++ Demon evasion payload) | 80 | 40056 (Qt GUI) | HTTP / HTTPS / SMB |
 | **`sliver`** | Sliver teamserver (Go implant + extensions) | 80 | 31337 (CLI / RPC) | mTLS / WireGuard / HTTP / DNS |
 | **`adaptix`** | Adaptix teamserver (Multiplayer Go + Qt GUI) | 80 | 4321 (Qt GUI) | HTTP/S / DNS / SMB / TCP Gopher |
-| **`mythic`** | Mythic server + HTTP profile microservices | 80 | 7443 (Web UI) | Multi-agent profiles (Apollo, Poseidon) |
+| **`mythic`** | Mythic core: server + postgres + rabbitmq | 80 | 7443 (Web UI/API) | http C2 profile via mythic-cli (Linux host) |
 
 ---
 
@@ -88,7 +88,7 @@ This copies `.env.example` → `.env`, builds the images, and starts the stack.
 
 ### 1. Meridian C2 — Lightweight Dual-Transport & DNS Tunneling
 - **Zero-Dependency Implant**: Pure Go (`parallax`), stdlib only (`crypto/ecdh`, `crypto/aes`). Compiles anywhere in seconds.
-- **Native DNS TXT Tunneling**: Uppercase Base32 chunking (36-byte packets) over UDP port 5353. Ideal for restricted network egress practice and DFIR-Nexus DNS telemetry evaluation.
+- **Native DNS TXT Tunneling**: Uppercase Base32 chunking (36-byte packets) over UDP (container `5353/udp`, host default `15353`). Ideal for restricted network egress practice and DFIR-Nexus DNS telemetry evaluation.
 - **Wire Cryptography**: X25519 Diffie-Hellman + HKDF-SHA256 derivation + AES-256-GCM AEAD envelopes binding messages to session IDs.
 - **Encrypted-at-Rest Results**: SQLite results encrypted under the server master key.
 

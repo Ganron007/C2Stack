@@ -1,0 +1,8 @@
+{
+  "mythic_uid": 0,
+  "mythic_gid": 0,
+  "mythic_server_bind_ip": "0.0.0.0",
+  "mythic_server_port": "17443",
+  "mythic_server_port_metrics": "17444",
+  "mythic_ui_port": "7443"
+}

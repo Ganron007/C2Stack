@@ -2,6 +2,7 @@ package mtasks
 
 import (
 	"reflect"
+	"runtime"
 	"testing"
 
 	"meridian/implant/internal/mproto"
@@ -27,17 +28,25 @@ func TestSplitCommand(t *testing.T) {
 }
 
 func TestRunExec(t *testing.T) {
-	r := Run(mproto.Task{ID: "t1", Module: "builtin/exec", Args: map[string]any{"command": "echo hi"}}, func() {})
+	name, arg, wantOut := "echo", "hi", "hi\n"
+	if runtime.GOOS == "windows" {
+		name, arg, wantOut = "cmd", "/c echo hi", "hi\r\n"
+	}
+	r := Run(mproto.Task{ID: "t1", Module: "builtin/exec", Args: map[string]any{"command": name + " " + arg}}, func() {})
 	if r.Status != "ok" || r.ExitCode != 0 {
 		t.Fatalf("bad result: %+v", r)
 	}
-	if string(r.Stdout) != "hi\n" {
+	if string(r.Stdout) != wantOut {
 		t.Fatalf("bad stdout: %q", r.Stdout)
 	}
 }
 
 func TestRunExecMissingCommand(t *testing.T) {
-	r := Run(mproto.Task{ID: "t1", Module: "builtin/exec", Args: map[string]any{}}, func() {})
+	cmd := "/nonexistent-xyz"
+	if runtime.GOOS == "windows" {
+		cmd = "nonexistent-xyz"
+	}
+	r := Run(mproto.Task{ID: "t1", Module: "builtin/exec", Args: map[string]any{"command": cmd}}, func() {})
 	if r.Status != "error" {
 		t.Fatalf("expected error, got %+v", r)
 	}
