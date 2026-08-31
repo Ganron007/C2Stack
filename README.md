@@ -103,9 +103,16 @@ This copies `.env.example` → `.env`, builds the images, and starts the stack.
 
 ---
 
-## Using With CADRE
-
 ## Documentation & Guides
 
 - **[Field Practice & Study Guide](Doc/PRACTICE-GUIDE.md)** — Complete step-by-step tutorial, hands-on lab modules, DNS covert tunneling walk-through, and DFIR-Nexus detection synergy.
 - **[Docker Architecture Reference](Doc/Docker.md)** — In-depth container layout, listener tuning, volume persistence, and isolation mechanics.
+
+## Licensing
+
+This project vendors or references third-party C2 software with distinct
+license terms (GPL-3.0 for Havoc, Adaptix, and Sliver; BSD-3-Clause for
+Mythic). Upstream license texts ship inside the vendored trees; see
+**[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)** for the full
+attribution and modification notices. C2Stack original code is MIT (with
+Commons Clause) per the root `LICENSE`.
