@@ -35,3 +35,8 @@ crash.*.log
 # Docker local env (copy from .env.example)
 C2Stack/Docker/.env
 .env
+
+# Internal engineering notes (gitignored)
+internal/
+Doc/internal/
+
