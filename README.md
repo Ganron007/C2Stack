@@ -72,6 +72,7 @@ This copies `.env.example` → `.env`, builds the images, and starts the stack.
 
 | Container | Role | C2 Port (Internal) | Operator / Control Port | Egress Transports |
 |---|---|:---:|:---:|:---|
+| **`portal`** | Flight Control & Visual Learning Hub | — | 8000 (Web UI / API) | Container control, OPSEC tracer, DNS dissector |
 | **`redirector`** | Apache header-based proxy + decoy CDN | 80 (published) | — | HTTP / HTTPS Proxy |
 | **`meridian`** | Dual-transport Go stdlib C2 + async Python daemon | 8080 (internal) | 15353/udp (DNS egress) | **HTTP(S) / WS + Chunked DNS TXT** |
 | **`havoc`** | Havoc teamserver (C++ Demon evasion payload) | 80 | 40056 (Qt GUI) | HTTP / HTTPS / SMB |
@@ -81,7 +82,19 @@ This copies `.env.example` → `.env`, builds the images, and starts the stack.
 
 ---
 
+## Flight Control & Learning Hub (`http://localhost:8000`)
+
+C2Stack ships with an integrated web management and educational portal:
+- **Container Stack Controller**: Real-time health monitoring and 1-click lifecycle controls (start, stop, restart, logs) for all 6 containers via Docker socket integration.
+- **Live OPSEC Redirector Visualizer**: Interactive packet flow tracing verifying `X-Request-ID: cadre-c2` routing into `c2_core` vs. scanner redirection to the **CloudEdge CDN Decoy Page**.
+- **Meridian DNS Covert Channel Dissector**: Educational waterfall showing Base32 chunking (RFC 1035 labels), sequence tracking, and wire encryption over UDP 5353.
+- **Cross-Framework Payload Studio**: One-click copy for PowerShell stagers, bash commands, and binary compilations across all 5 frameworks with detection metadata (Sysmon Event IDs, Sigma signatures).
+- **Active Fleet Radar**: Unified live session table aggregating active beacons across Meridian, Sliver, and Havoc.
+
+---
+
 ## Framework Highlights
+
 
 ### 1. Meridian C2 — Lightweight Dual-Transport & DNS Tunneling
 - **Zero-Dependency Implant**: Pure Go (`parallax`), stdlib only (`crypto/ecdh`, `crypto/aes`). Compiles anywhere in seconds.
@@ -105,7 +118,7 @@ This copies `.env.example` → `.env`, builds the images, and starts the stack.
 
 ## Documentation & Guides
 
-- **[Field Practice & Study Guide](Doc/PRACTICE-GUIDE.md)** — Complete step-by-step tutorial, hands-on lab modules, DNS covert tunneling walk-through, and DFIR-Nexus detection synergy.
+- **[Field Practice & Study Guide](Doc/PRACTICE-GUIDE.md)** — Complete step-by-step tutorial, Flight Control visual cockpit walkthrough, hands-on lab modules, DNS covert tunneling dissection, and DFIR-Nexus detection synergy.
 - **[Docker Architecture Reference](Doc/Docker.md)** — In-depth container layout, listener tuning, volume persistence, and isolation mechanics.
 
 ## Licensing

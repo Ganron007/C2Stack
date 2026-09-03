@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>C2Stack // Flight Control &amp; Visual Learning Hub</title>
+  <link rel="stylesheet" href="/static/portal.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Header -->
+    <header class="top-header">
+      <div class="brand-wrapper">
+        <svg class="logo-shield-svg" viewBox="0 0 110 145" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="shieldAmberGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#b45309"/>
+              <stop offset="55%" stop-color="#78350f"/>
+              <stop offset="100%" stop-color="#2b1102"/>
+            </linearGradient>
+          </defs>
+          <path d="M55 0 L110 18 V62 C110 100 86 128 55 145 C24 128 0 100 0 62 V18 Z" fill="url(#shieldAmberGrad)" stroke="#f59e0b" stroke-width="2.5"/>
+          <path d="M85 24 Q85 32 93 32 Q85 32 85 40 Q85 32 77 32 Q85 32 85 24 Z" fill="#ffffff" opacity="0.95"/>
+          <line x1="55" y1="50" x2="30" y2="90" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" opacity="0.9"/>
+          <line x1="55" y1="50" x2="55" y2="95" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" opacity="0.9"/>
+          <line x1="55" y1="50" x2="80" y2="90" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" opacity="0.9"/>
+          <circle cx="55" cy="50" r="10" fill="#ffffff" opacity="0.95"/>
+          <circle cx="30" cy="90" r="7.5" fill="#ffffff" opacity="0.95"/>
+          <circle cx="55" cy="95" r="7.5" fill="#ffffff" opacity="0.95"/>
+          <circle cx="80" cy="90" r="7.5" fill="#ffffff" opacity="0.95"/>
+          <path d="M41 36 A 18 18 0 0 1 69 36" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" opacity="0.75"/>
+          <path d="M32 27 A 28 28 0 0 1 78 27" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" opacity="0.5"/>
+        </svg>
+        <div class="brand">
+          <div class="brand-badge">
+            <span class="pulse-dot"></span>
+            <span>v3.2.0</span>
+          </div>
+          <h1 class="brand-title">C2STACK <span class="brand-accent">// FLIGHT CONTROL</span></h1>
+          <p class="brand-subtitle">Visual Learning Hub &amp; Multi-Tier C2 Orchestration Engine</p>
+        </div>
+      </div>
+
+
+      <div class="header-pills">
+        <div class="pill pill-opsec">
+          <span class="pill-label">OPSEC KEY:</span>
+          <code id="header-val">X-Request-ID: cadre-c2</code>
+        </div>
+        <div class="pill pill-edge">
+          <span class="pill-label">EDGE GATEWAY:</span>
+          <span id="edge-port">Port 80</span>
+        </div>
+        <button id="refresh-status-btn" class="btn btn-secondary">↻ Refresh Status</button>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button class="tab-btn active" data-tab="tab-stack">🎛️ Stack Health HUD</button>
+      <button class="tab-btn" data-tab="tab-redirector">🛡️ OPSEC Redirector Visualizer</button>
+      <button class="tab-btn" data-tab="tab-dns">📡 DNS TXT Covert Dissector</button>
+      <button class="tab-btn" data-tab="tab-payloads">⚡ Payload Studio</button>
+      <button class="tab-btn" data-tab="tab-fleet">🎯 Fleet Radar</button>
+    </nav>
+
+    <!-- Main Content Panels -->
+    <main class="main-content">
+      
+      <!-- TAB 1: STACK CONTROLLER & HEALTH HUD -->
+      <section id="tab-stack" class="tab-pane active">
+        <div class="pane-header">
+          <div>
+            <h2>Container Architecture &amp; Service Matrix</h2>
+            <p>Direct inspection of container states, published ports, and isolated backchannels.</p>
+          </div>
+          <div class="action-bar">
+            <button class="btn btn-primary" onclick="window.location.reload()">Sync Docker Status</button>
+          </div>
+        </div>
+
+        <div class="service-grid" id="service-grid">
+          <!-- Dynamic Service Cards Injected via JS -->
+          <div class="card loading-card">Loading C2Stack container matrix...</div>
+        </div>
+
+        <!-- Live Container Console Drawer -->
+        <div class="console-box">
+          <div class="console-header">
+            <span class="terminal-dot red"></span>
+            <span class="terminal-dot yellow"></span>
+            <span class="terminal-dot green"></span>
+            <span class="console-title" id="log-service-title">Active Service Logs [redirector]</span>
+          </div>
+          <pre class="console-body" id="service-logs">Fetching container logs...</pre>
+        </div>
+      </section>
+
+      <!-- TAB 2: OPSEC REDIRECTOR VISUALIZER -->
+      <section id="tab-redirector" class="tab-pane">
+        <div class="pane-header">
+          <div>
+            <h2>Apache Header-Aware Redirector Visualizer</h2>
+            <p>Understand how the fronting edge separates valid adversary traffic from scanners and blue team crawlers.</p>
+          </div>
+        </div>
+
+        <!-- Simulation Controls -->
+        <div class="redirector-sim-bar card">
+          <div class="sim-presets">
+            <span class="preset-label">Test Scenarios:</span>
+            <button class="btn btn-sm btn-outline-success" id="preset-valid">🟢 Victim Callback (Valid Header)</button>
+            <button class="btn btn-sm btn-outline-danger" id="preset-scanner">🔴 Threat Hunter / Shodan (No Header)</button>
+            <button class="btn btn-sm btn-outline-warning" id="preset-mismatch">🟡 Valid Header (Unknown URI)</button>
+          </div>
+
+          <div class="sim-form">
+            <div class="input-group">
+              <label>URI Callback Path</label>
+              <input type="text" id="sim-path" value="/gateway/v1/telemetry" class="code-input">
+            </div>
+            <div class="input-group">
+              <label>Custom Header Key</label>
+              <input type="text" id="sim-header-k" value="X-Request-ID" class="code-input">
+            </div>
+            <div class="input-group">
+              <label>Custom Header Value</label>
+              <input type="text" id="sim-header-v" value="cadre-c2" class="code-input">
+            </div>
+            <button class="btn btn-primary" id="btn-fire-test">Inspect Flow ➔</button>
+          </div>
+        </div>
+
+        <!-- Interactive Animated Flow Stage -->
+        <div class="flow-stage card">
+          <div class="flow-stage-header">Live Packet Trace</div>
+          <div class="flow-diagram" id="flow-diagram">
+            <!-- Animated nodes & arrows injected via JS -->
+          </div>
+        </div>
+
+        <!-- Decoy vs Backend Inspection Split -->
+        <div class="split-view">
+          <div class="card split-card">
+            <div class="split-title red-accent">🛡️ What the Blue Team / Internet Sees</div>
+            <div class="decoy-preview" id="decoy-preview">
+              <div class="browser-mockup">
+                <div class="browser-bar">https://cdn.edge-cache-cloud.net</div>
+                <div class="browser-content">
+                  <h3 style="color:#38bdf8;">CloudEdge Global CDN - 200 OK</h3>
+                  <p>All assets securely cached. Edge node #771 Anycast cluster.</p>
+                  <small style="color:#64748b;">Server: Apache/2.4 (Unix) | Latency: 4ms</small>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card split-card">
+            <div class="split-title green-accent">⚡ What the Operator &amp; Implant Sees</div>
+            <div class="backend-preview" id="backend-preview">
+              <div class="code-block">
+                <code id="backend-route-detail">Route to internal C2 Core container over c2_core network.</code>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: DNS TXT COVERT DISSECTOR -->
+      <section id="tab-dns" class="tab-pane">
+        <div class="pane-header">
+          <div>
+            <h2>Meridian DNS Covert Channel Dissector</h2>
+            <p>Dissect how commands are chunked into Base32 RFC 1035 labels and reassembled over UDP 5353.</p>
+          </div>
+        </div>
+
+        <div class="dns-workbench card">
+          <div class="dns-input-row">
+            <div class="input-group flex-2">
+              <label>Command Payload to Transmit</label>
+              <input type="text" id="dns-payload-input" value="whoami /priv &amp;&amp; net user" class="code-input">
+            </div>
+            <div class="input-group">
+              <label>Session ID (Hex/Base32)</label>
+              <input type="text" id="dns-session-input" value="A3F99B" class="code-input">
+            </div>
+            <div class="input-group flex-1">
+              <label>DNS Zone Domain</label>
+              <input type="text" id="dns-domain-input" value="c2.cadre.local" class="code-input">
+            </div>
+            <button class="btn btn-primary" id="btn-dissect-dns">Dissect &amp; Chunk ➔</button>
+          </div>
+
+          <!-- DNS Metrics Bar -->
+          <div class="metrics-row" id="dns-metrics-row">
+            <div class="metric-card">
+              <span class="metric-label">Original Payload</span>
+              <span class="metric-value" id="metric-bytes">22 bytes</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">Base32 Encoded</span>
+              <span class="metric-value" id="metric-b32">36 chars</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">Packets Generated</span>
+              <span class="metric-value highlight" id="metric-packets">1 packet</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">Wire Encryption</span>
+              <span class="metric-value" id="metric-crypto">X25519 + AES-GCM</span>
+            </div>
+          </div>
+
+          <!-- Packet Waterfall Table -->
+          <div class="packet-waterfall">
+            <h3>Generated UDP TXT Queries (Wire Format)</h3>
+            <table class="waterfall-table">
+              <thead>
+                <tr>
+                  <th>Seq</th>
+                  <th>Target FQDN Query (RFC 1035 Format)</th>
+                  <th>Chunk Size</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="dns-packet-tbody">
+                <!-- Injected via JS -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Educational Explainer -->
+          <div class="edu-card">
+            <h4>💡 Educational Deep Dive: How DNS TXT Tunneling Evades Firewalls</h4>
+            <ul id="dns-edu-notes">
+              <!-- Injected via JS -->
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: PAYLOAD STUDIO -->
+      <section id="tab-payloads" class="tab-pane">
+        <div class="pane-header">
+          <div>
+            <h2>Cross-Framework Payload &amp; Staging Studio</h2>
+            <p>Generate copy-ready execution commands, stagers, and detection telemetry across all 5 frameworks.</p>
+          </div>
+        </div>
+
+        <div class="studio-layout">
+          <!-- Sidebar selector -->
+          <div class="framework-sidebar">
+            <button class="fw-nav-btn active" data-fw="meridian">
+              <span class="fw-icon">🟢</span>
+              <div>
+                <strong>Meridian C2</strong>
+                <small>Go / Dual-Transport</small>
+              </div>
+            </button>
+            <button class="fw-nav-btn" data-fw="sliver">
+              <span class="fw-icon">⚡</span>
+              <div>
+                <strong>BishopFox Sliver</strong>
+                <small>Go / In-Memory .NET</small>
+              </div>
+            </button>
+            <button class="fw-nav-btn" data-fw="havoc">
+              <span class="fw-icon">👹</span>
+              <div>
+                <strong>Havoc C2</strong>
+                <small>C++ Demon / Evasion</small>
+              </div>
+            </button>
+            <button class="fw-nav-btn" data-fw="adaptix">
+              <span class="fw-icon">👥</span>
+              <div>
+                <strong>Adaptix C2</strong>
+                <small>Go Multiplayer C2</small>
+              </div>
+            </button>
+            <button class="fw-nav-btn" data-fw="mythic">
+              <span class="fw-icon">🐙</span>
+              <div>
+                <strong>Mythic C2</strong>
+                <small>Apollo &amp; Poseidon</small>
+              </div>
+            </button>
+          </div>
+
+          <!-- Payload Display Area -->
+          <div class="framework-details card" id="framework-details">
+            <div class="fw-head">
+              <h3 id="fw-name">Meridian C2</h3>
+              <p id="fw-desc">Loading framework payload profiles...</p>
+            </div>
+
+            <div class="stagers-section">
+              <h4>Delivery Commands &amp; One-Liners</h4>
+              <div id="stagers-list">
+                <!-- Injected via JS -->
+              </div>
+            </div>
+
+            <div class="detection-section">
+              <h4>🛡️ Blue Team &amp; DFIR Telemetry Profile</h4>
+              <div class="detection-box" id="detection-box">
+                <!-- Injected via JS -->
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 5: FLEET RADAR -->
+      <section id="tab-fleet" class="tab-pane">
+        <div class="pane-header">
+          <div>
+            <h2>Unified Active Fleet Radar</h2>
+            <p>Real-time session tracker monitoring callbacks across all C2 backends.</p>
+          </div>
+        </div>
+
+        <div class="card fleet-card">
+          <table class="fleet-table">
+            <thead>
+              <tr>
+                <th>Session ID</th>
+                <th>C2 Framework</th>
+                <th>Target Host</th>
+                <th>User Context</th>
+                <th>Transport Channel</th>
+                <th>Last Beacon</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="fleet-tbody">
+              <!-- Injected via JS -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <div>C2Stack v3.2.0 · Multi-Tier Docker Lab · Apache Header-Aware Proxy · Meridian Dual-Transport</div>
+      <div class="footer-links">
+        <span>Host Target: 192.168.77.1</span>
+        <span>Internal Net: c2_core</span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="/static/portal.js"></script>
+</body>
+</html>

@@ -64,7 +64,8 @@ Write-Host "`n[bootstrap] Stack status:" -ForegroundColor Cyan
 
 Write-Host @"
 
-[bootstrap] Next steps for the operator (Kali VM):
+[bootstrap] Next steps for the operator:
+  - C2Stack Flight Control UI    : http://localhost:${env:PORTAL_PORT:-8000} (or http://<host-ip-on-vmnet2>:${env:PORTAL_PORT:-8000})
   - Redirector callback endpoint : http://<host-ip-on-vmnet2>:${env:REDIRECTOR_HTTP_PORT:-80}
   - Mythic UI (if enabled)       : https://<host-ip-on-vmnet2>:${env:MYTHIC_UI_PORT:-7443}
   - Sliver operator port         : ${env:SLIVER_CTRL_PORT:-31337}

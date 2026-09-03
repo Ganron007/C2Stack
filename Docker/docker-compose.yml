@@ -196,3 +196,37 @@ services:
       - c2_core
       - c2_edge
     restart: unless-stopped
+
+  # ------------------------------------------------------------------
+  # C2Stack Portal — Flight Control & Visual Learning Hub
+  # Single web management UI for Docker container orchestration,
+  # real-time OPSEC redirector tracing, DNS TXT covert channel
+  # dissection, cross-framework payload generation, and fleet radar.
+  # ------------------------------------------------------------------
+  portal:
+    build:
+      context: ./portal
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      REDIRECTOR_HOST: redirector
+      REDIRECTOR_HTTP_PORT: ${REDIRECTOR_HTTP_PORT:-80}
+      C2_HEADER_NAME: ${C2_HEADER_NAME:-X-Request-ID}
+      C2_HEADER_VALUE: ${C2_HEADER_VALUE:-cadre-c2}
+      MERIDIAN_URI_PREFIX: ${MERIDIAN_URI_PREFIX:-/gateway/v1/telemetry}
+      SLIVER_URI_PREFIX: ${SLIVER_URI_PREFIX:-/cloud/storage/objects}
+      HAVOC_URI_PREFIX: ${HAVOC_URI_PREFIX:-/edge/cache/assets}
+      ADAPTIX_URI_PREFIX: ${ADAPTIX_URI_PREFIX:-/api/v1/sync}
+      MYTHIC_URI_PREFIX: ${MYTHIC_URI_PREFIX:-/cdn/media/stream}
+      MERIDIAN_DNS_PORT: ${MERIDIAN_DNS_PORT:-15353}
+      SLIVER_CTRL_PORT: ${SLIVER_CTRL_PORT:-31337}
+      HAVOC_TS_PORT: ${HAVOC_TS_PORT:-40056}
+      ADAPTIX_TS_PORT: ${ADAPTIX_TS_PORT:-4321}
+      MYTHIC_UI_PORT: ${MYTHIC_UI_PORT:-7443}
+    ports:
+      - "${PORTAL_PORT:-8000}:8000"
+    networks:
+      - c2_core
+      - c2_edge
+    restart: unless-stopped
+

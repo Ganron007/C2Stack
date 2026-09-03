@@ -40,3 +40,10 @@ C2Stack/Docker/.env
 internal/
 Doc/internal/
 
+# Python bytecode & test cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+
