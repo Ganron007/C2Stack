@@ -91,7 +91,12 @@ To eliminate the friction of juggling disparate CLI tools, desktop Qt applicatio
 
 Styled in C2Stack's signature **Warm Obsidian-Amber** palette (mirroring the logo's amber shield `#fbbf24` $\rightarrow$ `#b45309` and espresso card backdrops), the portal bridges all five frameworks into a single visual educational cockpit.
 
+<p align="center">
+  <img src="../assets/c2stack-flight-control.png" alt="C2Stack Flight Control Web Portal" width="850">
+</p>
+
 ```
+
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ 🌐 C2STACK // FLIGHT CONTROL & VISUAL LEARNING HUB                              [PORTAL :8000]   │
 ├──────────────────────────────────────────────────────────────────────────────────────────────────┤

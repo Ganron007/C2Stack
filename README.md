@@ -84,6 +84,10 @@ This copies `.env.example` → `.env`, builds the images, and starts the stack.
 
 ## Flight Control & Learning Hub (`http://localhost:8000`)
 
+<p align="center">
+  <img src="assets/c2stack-flight-control.png" alt="C2Stack Flight Control Web Portal" width="850">
+</p>
+
 C2Stack ships with an integrated web management and educational portal:
 - **Container Stack Controller**: Real-time health monitoring and 1-click lifecycle controls (start, stop, restart, logs) for all 6 containers via Docker socket integration.
 - **Live OPSEC Redirector Visualizer**: Interactive packet flow tracing verifying `X-Request-ID: cadre-c2` routing into `c2_core` vs. scanner redirection to the **CloudEdge CDN Decoy Page**.
