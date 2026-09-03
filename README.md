@@ -125,11 +125,12 @@ C2Stack ships with an integrated web management and educational portal:
 
 C2Stack stands on the shoulders of the offensive security and open-source research community:
 
-- **Meridian C2**: Created by [s1d9e](https://github.com/s1d9e) ([https://github.com/s1d9e/meridian](https://github.com/s1d9e/meridian)) — an exceptional, elegant from-scratch C2 framework featuring zero-dependency Go implants (`parallax`), native chunked DNS TXT tunneling, and clean X25519/AES-GCM wire cryptography. We deeply appreciate this fantastic independent student research work that powers C2Stack's native covert egress and educational dissector.
+- **Meridian C2**: Created by [s1d9e](https://github.com/s1d9e).
 - **Havoc C2**: Created by Paul Ungur ([@C5pider](https://github.com/C5pider)) and the Havoc Framework contributors.
 - **Sliver C2**: Created by [Bishop Fox](https://github.com/BishopFox/sliver).
 - **Adaptix C2**: Created by the [Adaptix-Framework](https://github.com/Adaptix-Framework/AdaptixC2) team.
 - **Mythic C2**: Created by Cody Thomas ([@its_a_feature_](https://github.com/its-a-feature/Mythic)).
+
 
 ## Licensing
 
