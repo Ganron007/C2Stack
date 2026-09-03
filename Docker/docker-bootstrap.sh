@@ -18,16 +18,17 @@ if ! docker info >/dev/null 2>&1; then
 fi
 echo "[bootstrap] Docker is available."
 
-ARGS=(compose --env-file .env up -d --build)
+PROFILES=()
 for arg in "$@"; do
   case "$arg" in
-    --mythic|--all) ARGS+=(--profile mythic) ;;
-    --adaptix|--all) ARGS+=(--profile adaptix) ;;
+    --mythic|--all) PROFILES+=(--profile mythic) ;;
+    --adaptix|--all) PROFILES+=(--profile adaptix) ;;
   esac
 done
 
 echo "[bootstrap] Starting C2Stack stack..."
-docker "${ARGS[@]}"
+docker compose --env-file .env "${PROFILES[@]}" up -d --build
+
 
 echo
 echo "[bootstrap] Stack status:"

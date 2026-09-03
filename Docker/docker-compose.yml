@@ -19,7 +19,10 @@
 #              the redirector (no direct internet egress)
 # ============================================================================
 
+name: c2stack
+
 networks:
+
   c2_edge:
     name: ${C2_EDGE_NETWORK}
   c2_core:
