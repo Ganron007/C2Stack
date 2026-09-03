@@ -121,11 +121,22 @@ C2Stack ships with an integrated web management and educational portal:
 - **[Field Practice & Study Guide](Doc/PRACTICE-GUIDE.md)** — Complete step-by-step tutorial, Flight Control visual cockpit walkthrough, hands-on lab modules, DNS covert tunneling dissection, and DFIR-Nexus detection synergy.
 - **[Docker Architecture Reference](Doc/Docker.md)** — In-depth container layout, listener tuning, volume persistence, and isolation mechanics.
 
+## Acknowledgments & Credits
+
+C2Stack stands on the shoulders of the offensive security and open-source research community:
+
+- **Meridian C2**: Created by [s1d9e](https://github.com/s1d9e) ([https://github.com/s1d9e/meridian](https://github.com/s1d9e/meridian)) — an exceptional, elegant from-scratch C2 framework featuring zero-dependency Go implants (`parallax`), native chunked DNS TXT tunneling, and clean X25519/AES-GCM wire cryptography. We deeply appreciate this fantastic independent student research work that powers C2Stack's native covert egress and educational dissector.
+- **Havoc C2**: Created by Paul Ungur ([@C5pider](https://github.com/C5pider)) and the Havoc Framework contributors.
+- **Sliver C2**: Created by [Bishop Fox](https://github.com/BishopFox/sliver).
+- **Adaptix C2**: Created by the [Adaptix-Framework](https://github.com/Adaptix-Framework/AdaptixC2) team.
+- **Mythic C2**: Created by Cody Thomas ([@its_a_feature_](https://github.com/its-a-feature/Mythic)).
+
 ## Licensing
 
 This project vendors or references third-party C2 software with distinct
 license terms (GPL-3.0 for Havoc, Adaptix, and Sliver; BSD-3-Clause for
-Mythic). Upstream license texts ship inside the vendored trees; see
+Mythic; MIT for Meridian). Upstream license texts ship inside the vendored trees; see
 **[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)** for the full
 attribution and modification notices. C2Stack original code is MIT (with
 Commons Clause) per the root `LICENSE`.
+
