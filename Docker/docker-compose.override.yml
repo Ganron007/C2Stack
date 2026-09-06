@@ -1,6 +1,0 @@
-# Smoke-test override: expose Sliver HTTP listener directly (bypass redirector).
-# Used for Campaign H C2 implant smoke test — remove after redirector header support is added.
-services:
-  sliver:
-    ports:
-      - "8082:80"
