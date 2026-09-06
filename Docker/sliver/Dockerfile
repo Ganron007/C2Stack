@@ -3,10 +3,10 @@ FROM debian:bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Sliver server + client are too large for git (283 MB exe > GitHub 100 MB
+# Sliver server + client are too large for git (298 MB exe > GitHub 100 MB
 # limit), so `Docker/sliver/bin/` is a gitignored LOCAL cache. The build
 # prefers the cache (bind-mounted from the build context) and otherwise
-# downloads the official v1.7.6 release from GitHub — both paths end with a
+# downloads the official v1.7.7 release from GitHub — both paths end with a
 # pinned SHA256 verification, so the image content is identical either way.
 # git must stay installed at runtime: sliver's garble subset applies linker
 # patches via `git apply`, and without git every `generate` fails with
@@ -25,11 +25,11 @@ RUN --mount=type=bind,source=bin,target=/opt/src-bin \
       if [ -f "/opt/src-bin/${f}_linux-amd64" ]; then \
         cp "/opt/src-bin/${f}_linux-amd64" "/usr/local/bin/${f}"; \
       else \
-        curl -fsSL "https://github.com/BishopFox/sliver/releases/download/v1.7.6/${f}_linux-amd64" -o "/usr/local/bin/${f}"; \
+        curl -fsSL "https://github.com/BishopFox/sliver/releases/download/v1.7.7/${f}_linux-amd64" -o "/usr/local/bin/${f}"; \
       fi; \
     done; \
-    echo "df6ba0ea19af88538815e59cb72589fb759e325f69a9b3e85760f0c04ce5250d  /usr/local/bin/sliver-server" > /tmp/SHA256SUMS \
-    && echo "50a17412ecebfcbeb15ee38b798f5b0b465fdb979ad00f016929e702969d2e5d  /usr/local/bin/sliver-client" >> /tmp/SHA256SUMS \
+    echo "10c78c3b6e9398797d3c1546c95c2db507f64d4bbd9932068a89ee4a8889e0c5  /usr/local/bin/sliver-server" > /tmp/SHA256SUMS \
+    && echo "4289cd1ddae5ef20e71c9eca914d853fde4b55fac20735cdfb87b240f8052b55  /usr/local/bin/sliver-client" >> /tmp/SHA256SUMS \
     && cd /usr/local/bin && sha256sum -c /tmp/SHA256SUMS \
     && chmod +x /usr/local/bin/sliver-server /usr/local/bin/sliver-client \
     && sliver-server version \
