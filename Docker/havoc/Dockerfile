@@ -38,12 +38,14 @@ WORKDIR /opt/havoc/teamserver
 COPY --from=builder /src/havoc ./havoc
 
 # The v0.7 teamserver CLI requires a profile; the built-in default is
-# `havoc server -d` which reads ./data/havoc.yaotl. Set it up along with the
-# musl cross toolchains the default profile points at (same layout the
-# upstream Install.sh produces) and the SQLite DB dir used by the teamserver.
-COPY --from=builder /src/profiles ./profiles
+# `havoc server -d` which reads ./data/havoc.yaotl. The committed C2Stack
+# profile (Docker/havoc/havoc.yaotl) adds the HTTP listener for the
+# redirector (bind :80, /edge/cache/assets, X-Request-ID header) on top of
+# the upstream default. The musl cross toolchains the profile points at are
+# laid out the same way the upstream Install.sh produces, plus the SQLite
+# DB dir used by the teamserver.
+COPY havoc.yaotl ./data/havoc.yaotl
 RUN mkdir -p /opt/havoc/teamserver/data \
-    && cp /opt/havoc/teamserver/profiles/havoc.yaotl /opt/havoc/teamserver/data/havoc.yaotl \
     && wget -q https://musl.cc/x86_64-w64-mingw32-cross.tgz -O /tmp/mingw64.tgz \
     && wget -q https://musl.cc/i686-w64-mingw32-cross.tgz -O /tmp/mingw32.tgz \
     && tar zxf /tmp/mingw64.tgz -C /opt/havoc/teamserver/data \

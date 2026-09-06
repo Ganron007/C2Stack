@@ -1,0 +1,7 @@
+# Vendored sliver binaries are a local cache - too large for git (283 MB exe,
+# GitHub's 100 MB/file limit). The Dockerfile bind-mounts this dir when it
+# exists and falls back to a SHA256-pinned download from GitHub releases.
+*
+!Dockerfile
+!bootstrap.sh
+!bootrc.rc

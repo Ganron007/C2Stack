@@ -1,3 +1,5 @@
-# Build context = Docker/havoc — only the vendored upstream tree is needed.
+# Build context = Docker/havoc — only the vendored upstream tree and the
+# committed C2Stack teamserver profile are needed.
 *
 !src/
+!havoc.yaotl

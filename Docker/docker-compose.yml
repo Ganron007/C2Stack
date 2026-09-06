@@ -75,8 +75,14 @@ services:
   sliver:
     build:
       context: ./sliver
+    # bootstrap.sh starts the daemon, mints the 'cadre' operator config and
+    # creates the HTTP C2 listener (bind :80, RootPath /cloud/storage/objects)
+    # so payloads call back through the redirector out of the box.
     volumes:
       - sliver_data:/root/.sliver
+      - ./sliver/bootstrap.sh:/bootstrap.sh:ro
+      - ./sliver/bootrc.rc:/bootrc.rc:ro
+    entrypoint: ["/bin/bash", "/bootstrap.sh"]
     ports:
       - "${SLIVER_CTRL_PORT}:31337"
     networks:
@@ -102,11 +108,17 @@ services:
   # ------------------------------------------------------------------
   # Mythic C2 (profile-gated: enable with --profile mythic)
   # Modern Mythic (single Go server container + embedded init; external
-  # Postgres + RabbitMQ as separate services). The http C2 profile and a
-  # payload type (e.g. apollo) are operator-installed via the official
-  # mythic-cli workflow (Linux host) - see Docker/mythic/README.md.
-  # Upstream images only (Mythic ships pre-built containers, not buildable
-  # sources; base images for the other frameworks are pulled the same way).
+  # Postgres + RabbitMQ as separate services). In Mythic 3.4 the server is
+  # a pure orchestrator: payload types / C2 profiles / translators are
+  # SIBLING containers that self-register over RabbitMQ sync queues
+  # (pt_sync / c2_sync / tr_sync) - no docker socket or mythic-cli needed.
+  # mythic-cli is only a docker-compose generator; the wiring below replaces
+  # it directly. Server image pinned to the highest stable GHCR tag (v4 is
+  # RC-only; the `latest` tag is explicitly marked "test containers").
+  # NOTE: C2-profile containers (http/websocket/smb/tcp) no longer exist
+  # upstream (removed from tags AND git history) - agent callback traffic is
+  # blocked until Mythic v4 GA bundles profiles in the server image. The
+  # apollo image ships ONLY the payload type (its C2_Profiles/ is a .keep).
   # ------------------------------------------------------------------
   mythic_server:
     image: ghcr.io/its-a-feature/mythic_server:v3.4.0.61
@@ -133,6 +145,23 @@ services:
     networks:
       - c2_core
       - c2_edge
+    restart: unless-stopped
+
+  # Apollo payload-type container (self-registers with the server over
+  # RabbitMQ). mythic-container 0.6.14 reads connection config ONLY from
+  # rabbitmq_config.json in the working dir (/Mythic) - env vars do not
+  # affect the broker (Dynaconf has no envvar prefix), so the single-file
+  # bind mount is the whole mechanism.
+  mythic_apollo:
+    image: ghcr.io/mythicagents/apollo:v0.0.1.19
+    profiles: ["mythic"]
+    volumes:
+      - ./mythic/apollo/rabbitmq_config.json:/Mythic/rabbitmq_config.json:ro
+    depends_on:
+      - mythic_rabbitmq
+      - mythic_server
+    networks:
+      - c2_core
     restart: unless-stopped
 
   mythic_postgres:
@@ -175,9 +204,15 @@ services:
     volumes:
       - adaptix_data:/app/data
     ports:
-      - "${ADAPTIX_TS_PORT}:4321"
+      # Explicit 0.0.0.0 host binding: a bare "${PORT}:4321" mapping renders
+      # as a no-host-IP publish that Docker Desktop fails to proxy.
+      - "0.0.0.0:${ADAPTIX_TS_PORT}:4321"
     networks:
+      # c2_edge required: the teamserver port (Qt client) is published to the
+      # host, and Docker drops port publishing for containers that are only on
+      # the internal c2_core network (NetworkSettings.Ports stays empty).
       - c2_core
+      - c2_edge
     restart: unless-stopped
 
   # ------------------------------------------------------------------

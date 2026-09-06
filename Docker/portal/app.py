@@ -57,11 +57,11 @@ FRAMEWORK_PREFIXES = {
 
 FRAMEWORK_PORTS = {
     "redirector": {"http": REDIRECTOR_PORT, "internal": 80, "type": "Edge Proxy / Decoy"},
-    "meridian": {"http": 8080, "dns": int(os.environ.get("MERIDIAN_DNS_PORT", "15353")), "type": "HTTP / DNS TXT C2"},
-    "sliver": {"control": int(os.environ.get("SLIVER_CTRL_PORT", "31337")), "http": 80, "type": "Go C2 / In-Memory .NET"},
-    "havoc": {"teamserver": int(os.environ.get("HAVOC_TS_PORT", "40056")), "http": 80, "type": "C++ Demon / EDR Evasion"},
-    "adaptix": {"teamserver": int(os.environ.get("ADAPTIX_TS_PORT", "4321")), "http": 80, "type": "Go Multiplayer C2"},
-    "mythic": {"ui": int(os.environ.get("MYTHIC_UI_PORT", "17443")), "http": 80, "type": "Extensible Web C2"},
+    "meridian": {"dns": int(os.environ.get("MERIDIAN_DNS_PORT", "15353")), "http": "via redirector :80", "type": "HTTP / DNS TXT C2"},
+    "sliver": {"control": int(os.environ.get("SLIVER_CTRL_PORT", "31337")), "http": "via redirector :80", "type": "Go C2 / In-Memory .NET"},
+    "havoc": {"teamserver": int(os.environ.get("HAVOC_TS_PORT", "40056")), "http": "via redirector :80", "type": "C++ Demon / EDR Evasion"},
+    "adaptix": {"teamserver": int(os.environ.get("ADAPTIX_TS_PORT", "4321")), "http": "via redirector :80", "type": "Go Multiplayer C2"},
+    "mythic": {"ui": int(os.environ.get("MYTHIC_UI_PORT", "7443")), "http": "via redirector :80", "type": "Extensible Web C2"},
 }
 
 
@@ -189,6 +189,26 @@ def probe_tcp_port(host: str, port: int, timeout: float = 0.5) -> bool:
         return False
 
 
+def resolve_host_probe_address() -> str:
+    """Published ports live on the Docker host, not in this container's
+    namespace. Resolve the host gateway from the default route (falling back
+    to loopback) so health probes hit the right interface."""
+    try:
+        import struct
+
+        with open("/proc/net/route", "r") as f:  # noqa: SIM115
+            for line in f.read().splitlines()[1:]:
+                parts = line.split()
+                if len(parts) >= 3 and parts[1] == "00000000":
+                    return socket.inet_ntoa(struct.pack("<I", int(parts[2], 16)))
+    except Exception:
+        pass
+    return "127.0.0.1"
+
+
+PROBE_HOST = os.environ.get("PROBE_HOST") or resolve_host_probe_address()
+
+
 # ============================================================================
 # Models
 # ============================================================================
@@ -241,11 +261,15 @@ def get_status() -> dict[str, Any]:
                 matched_container = cinfo
                 break
 
-        # Check port reachability
+        # Check port reachability (published host ports only; string values
+        # like "via redirector :80" describe internal bindings and are skipped)
         is_port_live = False
-        port_to_check = meta.get("http") or meta.get("control") or meta.get("teamserver") or meta.get("ui")
-        if port_to_check:
-            is_port_live = probe_tcp_port("127.0.0.1", port_to_check)
+        port_to_check = next(
+            (meta[k] for k in ("control", "teamserver", "ui", "dns", "http") if isinstance(meta.get(k), int)),
+            None,
+        )
+        if port_to_check is not None:
+            is_port_live = probe_tcp_port(PROBE_HOST, port_to_check)
 
         # State evaluation: running if docker says running OR if port is responding
         is_running = False
@@ -542,10 +566,11 @@ def get_payload_studio() -> dict[str, Any]:
         },
         "mythic": {
             "name": "Mythic C2",
-            "description": "Multi-agent collaborative framework (Apollo for Windows, Poseidon for Linux/macOS).",
+            "description": "Multi-agent collaborative framework (Apollo for Windows, Poseidon for Linux/macOS). Latest stable = 3.4.0.61 (v4 ships profiles built-in, not yet GA).",
             "stagers": {
-                "cli_payload": "./mythic-cli payload create --agent apollo --c2 http --os Windows",
-                "ui_url": f"https://192.168.77.1:{FRAMEWORK_PORTS['mythic']['ui']}",
+                "rest_login": "curl -s http://192.168.77.1:7443/auth -X POST -H 'Content-Type: application/json' -d '{\"username\":\"mythic_admin\",\"password\":\"mythic\"}'",
+                "payload_build": "POST /api/v1.4/createpayload_webhook (JWT from /auth) with an http C2 profile instance. Apollo payload type registers at startup; see Doc/Docker.md for the exact payload-creation call.",
+                "ui_url": "http://192.168.77.1:7443 (REST/psql surface; the browser UI is upstream optional containers we don't ship)",
             },
             "detection": {
                 "network": "Customizable HTTP profile mimicking common CDN streaming services.",

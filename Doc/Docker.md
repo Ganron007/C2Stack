@@ -132,10 +132,15 @@ C2Stack/Docker/
 │   ├── entrypoint.sh         # starts HTTP (:8080) & DNS (:5353) listeners
 │   ├── meridian/             # python server package
 │   └── implant/              # parallax Go implant source (stdlib only)
-├── sliver/                   # vendored v1.7.6 release binaries (SHA256-pinned) + Dockerfile
+├── sliver/                   # vendored v1.7.7 release binaries (SHA256-pinned) + Dockerfile
+│   ├── bootstrap.sh          # daemon + operator config + HTTP listener (auto at start)
+│   └── bootrc.rc             # rc script: http listener :80 rootpath /cloud/storage/objects
 ├── havoc/                    # vendored Havoc source (GPL-3.0) + Dockerfile (toolchains baked)
+│   └── havoc.yaotl           # C2Stack teamserver profile: HTTP listener :80 (redirector)
 ├── adaptix/                  # vendored Adaptix source (GPL-3.0) + Dockerfile (built in-repo)
-└── mythic/                   # (optional) server config mount + operator notes
+├── mythic/                   # (optional) config + apollo sibling container wiring
+│   └── apollo/rabbitmq_config.json   # payload-type container self-registration config
+└── portal/                   # Flight Control dashboard (:8000) + tests
 ```
 
 ### Networks
@@ -165,45 +170,71 @@ cd C2Stack/Docker
 ./docker-bootstrap.sh --all          # all four frameworks
 ```
 
-### Verified state (Aug 2026)
+### Verified state (Sep 2026)
 
 - **Redirector** — vhost-level header+prefix routing to all 5 backends (no longer
   `<Location>`-based); matrix tested: correct `X-Request-ID` proxies, missing/wrong
-  header falls through to the decoy page (404).
+  header falls through to the decoy page (404). Distinguishable live probes:
+  with-header requests return empty-404 from the backend listener; no-header
+  probes return the Apache-styled decoy page.
 - **Meridian** — full E2E proven through the redirector: KEX → beacon → task → result
   (`whoami` round-trip on a Windows host implant), and the DNS transport proven
   (chunked TXT over UDP 5353 in-container via host port 15353). All Go unit tests pass.
-- **Sliver / Havoc / Adaptix** — vendored builds verified: sliver-server up on 31337,
-  havoc teamserver up on 40056, adaptix teamserver up on 4321. Their HTTP :80 listeners
-  are configured at the operator console (see listener tuning above).
-- **Mythic** — core stack (server + postgres + rabbitmq) boots clean and healthy; API
-  alive on 17443. Installing an http C2 profile/payload type follows the upstream
-  mythic-cli flow (Linux host) — see `Docker/mythic/README.md`.
+- **Sliver** — v1.7.7 (SHA256-pinned), bootstrap at container start mints the
+  `cadre` operator config and creates the HTTP listener (bind :80,
+  RootPath `/cloud/storage/objects`) — verified live: with-header requests hit the
+  listener, decoy without header. Full garble `generate` proven on v1.7.7 (47s build).
+- **Havoc** — v0.7 teamserver with the C2Stack HTTP listener baked into the profile
+  (`Docker/havoc/havoc.yaotl`): bind :80, Uris `/edge/cache/assets/`,
+  header `X-Request-ID: cadre-c2`. Live-verified through the redirector; Demon
+  payload generation proven (cross-gcc + nasm in-container).
+- **Adaptix** — teamserver :4321 published and reachable from the host; the service
+  is on `c2_edge` because Docker drops port publishing for containers that sit only
+  on the internal `c2_core` network (see the compose comment). HTTP/DNS/SMB extender
+  listeners are created in the Qt GUI client.
+- **Mythic** — server+postgres+rabbitmq healthy (latest stable 3.4.0.61). The Apollo
+  payload type is registered **without mythic-cli**: it self-registers over RabbitMQ
+  sync queues as a sibling container (`mythic_apollo`, owns
+  `Docker/mythic/apollo/rabbitmq_config.json`). C2-profile containers (http/websocket/
+  smb/tcp) were removed from upstream's tags and commit history — they are not
+  obtainable from any published source, so agent callback traffic is the one piece
+  that stays blocked; the path forward is Mythic v4 (profiles bundled in the server
+  image) when it goes GA. REST `/auth` + webhooks verified on :7443.
 
 ### Operator (Kali VM) next steps
 
 - Callback endpoint: `http://<host-ip-on-vmnet2>:<REDIRECTOR_HTTP_PORT>` with header
   `X-Request-ID: cadre-c2`.
-- Mythic UI: `https://<host-ip-on-vmnet2>:<MYTHIC_UI_PORT>` (enable `--profile mythic`).
-- Sliver operator: connect `sliver-client` to `<host-ip>:31337`.
+- Mythic REST: `http://<host-ip-on-vmnet2>:7443` (JWT via `POST /auth`, webhooks under
+  `/api/v1.4`) — enable `--profile mythic`.
+- Sliver operator: connect `sliver-client` to `<host-ip>:31337` with the operator config
+  minted at container start (name `cadre`: `docker exec c2stack-sliver-1 sh -c "sliver-server
+  operator --name cadre --lhost 127.0.0.1 -p 31337 -s /tmp/cadre.op.cfg -P all"` then
+  import+console on the Kali box).
 - Havoc teamserver: `<host-ip>:40056`.
 - Adaptix operator: Qt GUI client → `<host-ip>:4321` (enable `--profile adaptix`).
 
 ### Framework listener tuning
 
 The redirector forwards each URI prefix to the matching backend **preserving the full
-path**, exactly like the VM setup. Configure each framework's HTTP C2 listener to match:
+path**, exactly like the VM setup. Two listeners are configured by the stack itself;
+the rest are created from the operator consoles:
 
-- **Sliver** — create the HTTP listener with `RootPath` = `/cloud/storage/objects` and
-  bind port `80` inside the container.
-- **Havoc** — bind the HTTP listener on port `80`; set the listener base path to
-  `/edge/cache/assets` if your Havoc build supports a configurable path, otherwise the
-  redirector still forwards the prefix and Havoc answers on its configured endpoints.
-- **Mythic** — install the `http` C2 profile, then set its callback host to the
-  redirector URL and ensure the profile serves C2 under `/cdn/media/stream`.
-- **Adaptix** — the HTTP Beacon listener binds port `80` inside the container. Set
-  the listener URI to `/api/v1/sync` to match the redirector prefix. The DNS, SMB,
-  and TCP listeners operate out-of-band (not through the redirector).
+- **Sliver** — automatic: `Docker/sliver/bootstrap.sh` runs the HTTP listener with
+  `RootPath` = `/cloud/storage/objects` on port `80` at container start (idempotent).
+  Payloads are generated with `generate --http <redirector-host>:80` so they call back
+  through the redirector.
+- **Havoc** — automatic: `Docker/havoc/havoc.yaotl` (baked into the image at build)
+  starts an HTTP listener on port `80`: `Hosts` must be set to the victim-facing
+  callback host before generating a Demon (edit the profile + rebuild, or edit in the
+  Qt client). Base path `/edge/cache/assets` + header come from the same file.
+- **Mythic** — the `http` C2 profile instance cannot be created yet (upstream removed
+  the C2-profile container code; see Verified state). When Mythic v4 GA ships the
+  bundled profile, set its callback host to the redirector URL under
+  `/cdn/media/stream`.
+- **Adaptix** — the HTTP Beacon listener binds port `80` inside the container; create
+  it in the Qt GUI client with URI `/api/v1/sync` to match the redirector prefix.
+  The DNS, SMB, and TCP listeners operate out-of-band (not through the redirector).
 - **Meridian** — the HTTP listener binds port `8080` on `c2_core`; it accepts both the
   plain API paths and the redirector's `/gateway/v1/telemetry` prefixed path. The DNS
   listener listens on `0.0.0.0:5353/udp` inside the container (domain `c2.cadre.local`);
