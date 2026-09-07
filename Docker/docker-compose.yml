@@ -115,10 +115,10 @@ services:
   # mythic-cli is only a docker-compose generator; the wiring below replaces
   # it directly. Server image pinned to the highest stable GHCR tag (v4 is
   # RC-only; the `latest` tag is explicitly marked "test containers").
-  # NOTE: C2-profile containers (http/websocket/smb/tcp) no longer exist
-  # upstream (removed from tags AND git history) - agent callback traffic is
-  # blocked until Mythic v4 GA bundles profiles in the server image. The
-  # apollo image ships ONLY the payload type (its C2_Profiles/ is a .keep).
+  # The http C2 profile comes from the MythicC2Profiles ORG (separate from
+  # the main Mythic repo): ghcr.io/mythicc2profiles/http:v0.0.3.2. It
+  # self-registers the same way and serves the agent-facing :80 listener;
+  # the redirector routes /cdn/media/stream to it.
   # ------------------------------------------------------------------
   mythic_server:
     image: ghcr.io/its-a-feature/mythic_server:v3.4.0.61
@@ -162,6 +162,27 @@ services:
       - mythic_server
     networks:
       - c2_core
+    restart: unless-stopped
+
+  # HTTP C2 profile container (MythicC2Profiles/http). Same self-registration
+  # pattern as Apollo, but uses MythicContainer v1.5.1 (Go, not Python) and
+  # reads broker config from env vars (RABBITMQ_HOST etc.) - no
+  # rabbitmq_config.json mount needed. Serves the actual HTTP listener on :80
+  # that agents call back to; the redirector proxies /cdn/media/stream here.
+  mythic_http:
+    image: ghcr.io/mythicc2profiles/http:v0.0.3.2
+    profiles: ["mythic"]
+    environment:
+      RABBITMQ_HOST: mythic_rabbitmq
+      RABBITMQ_PASSWORD: mythic
+      MYTHIC_SERVER_HOST: mythic_server
+      MYTHIC_SERVER_GRPC_PORT: "17444"
+    depends_on:
+      - mythic_rabbitmq
+      - mythic_server
+    networks:
+      - c2_core
+      - c2_edge
     restart: unless-stopped
 
   mythic_postgres:

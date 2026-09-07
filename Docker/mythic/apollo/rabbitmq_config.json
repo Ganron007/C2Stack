@@ -3,5 +3,8 @@
   "rabbitmq_port": 5672,
   "rabbitmq_user": "mythic_user",
   "rabbitmq_password": "mythic",
-  "rabbitmq_vhost": "mythic_vhost"
+  "rabbitmq_vhost": "mythic_vhost",
+  "mythic_server_host": "mythic_server",
+  "mythic_server_port": 17443,
+  "mythic_server_grpc_port": 17444
 }

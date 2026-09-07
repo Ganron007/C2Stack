@@ -569,7 +569,7 @@ def get_payload_studio() -> dict[str, Any]:
             "description": "Multi-agent collaborative framework (Apollo for Windows, Poseidon for Linux/macOS). Latest stable = 3.4.0.61 (v4 ships profiles built-in, not yet GA).",
             "stagers": {
                 "rest_login": "curl -s http://192.168.77.1:7443/auth -X POST -H 'Content-Type: application/json' -d '{\"username\":\"mythic_admin\",\"password\":\"mythic\"}'",
-                "payload_build": "POST /api/v1.4/createpayload_webhook (JWT from /auth) with an http C2 profile instance. Apollo payload type registers at startup; see Doc/Docker.md for the exact payload-creation call.",
+                "payload_build": "create_c2parameter_instance_webhook (input: instance_name + c2profile_id=1 + c2_instance JSON-string with callback_host WITHOUT port) -> start_stop_profile_webhook {id:1, action:start} -> createpayload_webhook {payloadDefinition JSON-string: payload_type=apollo, selected_os=Windows, c2_profiles=[{c2_profile:http, c2_profile_parameters:{callback_host/callback_port/headers}}]} -> download exe via GET /direct/download/<uuid>. Verified working; see Docker/mythic/README.md.",
                 "ui_url": "http://192.168.77.1:7443 (REST/psql surface; the browser UI is upstream optional containers we don't ship)",
             },
             "detection": {

@@ -195,11 +195,12 @@ cd C2Stack/Docker
 - **Mythic** — server+postgres+rabbitmq healthy (latest stable 3.4.0.61). The Apollo
   payload type is registered **without mythic-cli**: it self-registers over RabbitMQ
   sync queues as a sibling container (`mythic_apollo`, owns
-  `Docker/mythic/apollo/rabbitmq_config.json`). C2-profile containers (http/websocket/
-  smb/tcp) were removed from upstream's tags and commit history — they are not
-  obtainable from any published source, so agent callback traffic is the one piece
-  that stays blocked; the path forward is Mythic v4 (profiles bundled in the server
-  image) when it goes GA. REST `/auth` + webhooks verified on :7443.
+  `Docker/mythic/apollo/rabbitmq_config.json`). The HTTP C2 profile is resolved too —
+  as a mixed Go/Python ecosystem: the `http` profile container
+  (`ghcr.io/mythicc2profiles/http:v0.0.3.2`, `mythic_http` service) self-registers the
+  same way and serves the agent-facing :80 listener. REST `/auth` + webhooks verified
+  on :7443, full payload build proven (Apollo .exe with the http profile, callback
+  through the redirector).
 
 ### Operator (Kali VM) next steps
 
@@ -228,10 +229,15 @@ the rest are created from the operator consoles:
   starts an HTTP listener on port `80`: `Hosts` must be set to the victim-facing
   callback host before generating a Demon (edit the profile + rebuild, or edit in the
   Qt client). Base path `/edge/cache/assets` + header come from the same file.
-- **Mythic** — the `http` C2 profile instance cannot be created yet (upstream removed
-  the C2-profile container code; see Verified state). When Mythic v4 GA ships the
-  bundled profile, set its callback host to the redirector URL under
-  `/cdn/media/stream`.
+- **Mythic** — the `http` C2 profile container is registered and the listener is live
+  inside `mythic_http` (:80). Create the profile instance via the REST API:
+  `POST /api/v1.4/create_c2parameter_instance_webhook` with a JSON-string `c2_instance`
+  (fields `callback_host` — **without** a port, `callback_port`, `headers`
+  `X-Request-ID: cadre-c2`, `get_uri`/`post_uri`/`query_path_name` low-noise paths).
+  Then start it: `POST /start_stop_profile_webhook` `{"id":1,"action":"start"}`, and
+  set `callback_host` in the payload to the redirector URL
+  `http://<host-ip-on-vmnet2>/cdn/media/stream`. See `Docker/mythic/README.md` for the
+  full worked example (payload build + download verified).
 - **Adaptix** — the HTTP Beacon listener binds port `80` inside the container; create
   it in the Qt GUI client with URI `/api/v1/sync` to match the redirector prefix.
   The DNS, SMB, and TCP listeners operate out-of-band (not through the redirector).
