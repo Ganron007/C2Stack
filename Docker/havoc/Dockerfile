@@ -52,6 +52,14 @@ RUN mkdir -p /opt/havoc/teamserver/data \
     && tar zxf /tmp/mingw32.tgz -C /opt/havoc/teamserver/data \
     && rm -f /tmp/mingw64.tgz /tmp/mingw32.tgz
 
+# REQUIRED for payload generation: the teamserver compiles Demon payloads
+# SERVER-SIDE (not in the Qt client). builder.go reads
+# ./payloads/Demon/{src/core,src/crypt,src/inject,src/asm} + include, and
+# agents/demons.go needs ./payloads/DllLdr.x64.bin and Shellcode.x64/x86.bin.
+# Without this directory every Demon build silently produces a broken
+# payload (see the mythic-http audit: missing payloads/ == broken builds).
+COPY src/payloads ./payloads
+
 # Teamserver state (SQLite DB, generated certs, loot) persists via the named
 # volume mounted at ./data (the path the teamserver actually writes to).
 VOLUME ["/opt/havoc/teamserver/data"]

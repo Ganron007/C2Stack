@@ -2,9 +2,10 @@
 # - Teamserver control port: 40056 (operators connect via the Qt client on Kali)
 # - HTTP C2 listener on :80 bound for the redirector route /edge/cache/assets
 #   with the C2_HEADER_NAME/VALUE agreed in C2Stack (X-Request-ID: cadre-c2).
-#   Before generating a Demon payload, set Hosts to the hostname/domain the
-#   USER will call back to (the redirector's victim-facing host), and adjust
-#   Uris/Headers to match Docker/.env (HAVOC_URI_PREFIX + C2_HEADER_*).
+#   Hosts is the victim-facing callback host the payload is built with - it
+#   must be the redirector's host (192.168.77.1 in the lab) or a domain
+#   resolving to it. PortConn/PortBind/Uris/Headers must match Docker/.env
+#   (HAVOC_URI_PREFIX + C2_HEADER_*) or the callback is dropped.
 Teamserver {
     Host = "0.0.0.0"
     Port = 40056
@@ -30,7 +31,7 @@ Listeners {
     Http {
         Name         = "c2stack - http"
         Hosts        = [
-            "c2.local", # CHANGE ME: victim-facing callback host (redirector host/domain)
+            "192.168.77.1", # victim-facing callback host = the C2Stack redirector
         ]
         HostBind     = "0.0.0.0"
         HostRotation = "round-robin"
@@ -62,7 +63,7 @@ Listeners {
     }
 }
 
-# optional - can be removed if unused.
+# Required block in the yaotl config grammar (unused by the core flow).
 Service {
     Endpoint = "service-endpoint"
     Password = "service-password"
