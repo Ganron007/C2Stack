@@ -11,8 +11,11 @@ Teamserver/data/loot/
 # dont commit your secrets
 Client/Data/database.db
 
-# ignore go stuff
-Teamserver/go.sum
+# go.sum MUST be committed: Docker/havoc/Dockerfile runs `make dev-ts-compile`
+# and Go >= 1.16 defaults to -mod=readonly, so a missing sum entry fails the
+# image build with "missing go.sum entry for module providing package ...".
+# (The pattern was also case-ranged: on a case-insensitive filesystem it matched
+# the vendored lowercase teamserver/ dir we actually build from.)
 
 # ignore compiled binaries
 Client/Havoc

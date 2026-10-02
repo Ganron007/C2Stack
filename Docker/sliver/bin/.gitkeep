@@ -1,0 +1,3 @@
+# Placeholder only. The Sliver binaries in this directory are a local,
+# gitignored build cache; .gitkeep exists so the directory is present in a
+# fresh clone and the Dockerfile's bind-mount source resolves.

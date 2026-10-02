@@ -31,10 +31,14 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    # The dashboard is served from this same origin, so no cross-origin access
+    # is needed. A wildcard origin combined with allow_credentials is invalid
+    # per the CORS spec and, if it ever were honoured, would let any page on
+    # the host drive the container-control endpoints (start/stop/restart).
+    allow_origins=[],
+    allow_credentials=False,
+    allow_methods=["GET"],
+    allow_headers=["Content-Type"],
 )
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -89,8 +93,8 @@ def query_docker_socket(path: str, method: str = "GET", body: dict[str, Any] | N
     if not os.path.exists(sock_path):
         return None
 
+    conn = UnixSocketHTTPConnection(sock_path, timeout=4)
     try:
-        conn = UnixSocketHTTPConnection(sock_path, timeout=4)
         headers = {"Host": "localhost"}
         payload_data = None
         if body is not None:
@@ -100,12 +104,18 @@ def query_docker_socket(path: str, method: str = "GET", body: dict[str, Any] | N
         conn.request(method, path, body=payload_data, headers=headers)
         response = conn.getresponse()
         raw = response.read().decode("utf-8", errors="replace")
-        conn.close()
         if response.status in (200, 201, 204):
             return json.loads(raw) if raw.strip().startswith(("{", "[")) else raw
         return None
     except Exception:
         return None
+    finally:
+        # Always close: previously an exception between connect() and close()
+        # leaked the fd until GC (fine on CPython, a real leak elsewhere).
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def get_docker_containers() -> list[dict[str, Any]]:
@@ -280,12 +290,22 @@ def get_status() -> dict[str, Any]:
 
     services_status = {}
     for svc, meta in FRAMEWORK_PORTS.items():
-        # Match against docker container map (e.g. docker-meridian-1 or c2stack-meridian)
+        # Match against the docker container map. Compose service names appear as
+        # "<project>-<service>-<n>", so prefer the exact "<prefix>-<svc>" segment
+        # over a bare substring test: "mythic" also occurs inside
+        # "c2stack-mythic_postgres-1", which made the Mythic card report the
+        # database container (and its logs) instead of the server.
         matched_container = None
+        exact = f"-{svc}-"
         for cname, cinfo in container_map.items():
-            if svc in cname:
+            if exact in cname:
                 matched_container = cinfo
                 break
+        if matched_container is None:
+            for cname, cinfo in container_map.items():
+                if svc in cname:
+                    matched_container = cinfo
+                    break
 
         # Check port reachability (published host ports only; string values
         # like "via redirector :80" describe internal bindings and are skipped)
@@ -331,9 +351,14 @@ def get_status() -> dict[str, Any]:
 @app.post("/api/containers/{service_name}/action")
 def container_action(service_name: str, action: str) -> dict[str, Any]:
     """Execute lifecycle action (start/stop/restart) on a C2Stack container."""
+    clean_target = service_name.lower()
+    if clean_target not in FRAMEWORK_PORTS:
+        # Allow-list: the endpoint controls Docker, so an unrecognised name must
+        # not fall through to a substring match that could hit another container.
+        raise HTTPException(status_code=404, detail=f"unknown service '{service_name}'")
+
     docker_containers = get_docker_containers()
     target_id = None
-    clean_target = service_name.lower()
     for c in docker_containers:
         for name in c.get("Names", []):
             if clean_target in name.lower():

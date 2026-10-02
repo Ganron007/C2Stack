@@ -45,23 +45,29 @@ services:
     build:
       context: ./redirector
     environment:
-      C2_HEADER_NAME: ${C2_HEADER_NAME}
-      C2_HEADER_VALUE: ${C2_HEADER_VALUE}
-      MYTHIC_URI_PREFIX: ${MYTHIC_URI_PREFIX}
-      SLIVER_URI_PREFIX: ${SLIVER_URI_PREFIX}
-      HAVOC_URI_PREFIX: ${HAVOC_URI_PREFIX}
-      ADAPTIX_URI_PREFIX: ${ADAPTIX_URI_PREFIX}
-      MERIDIAN_URI_PREFIX: ${MERIDIAN_URI_PREFIX}
-      MYTHIC_BACKEND_HOST: ${MYTHIC_BACKEND_HOST}
-      MYTHIC_BACKEND_PORT: ${MYTHIC_BACKEND_PORT}
-      SLIVER_BACKEND_HOST: ${SLIVER_BACKEND_HOST}
-      SLIVER_BACKEND_PORT: ${SLIVER_BACKEND_PORT}
-      HAVOC_BACKEND_HOST: ${HAVOC_BACKEND_HOST}
-      HAVOC_BACKEND_PORT: ${HAVOC_BACKEND_PORT}
-      ADAPTIX_BACKEND_HOST: ${ADAPTIX_BACKEND_HOST}
-      ADAPTIX_BACKEND_PORT: ${ADAPTIX_BACKEND_PORT}
-      MERIDIAN_BACKEND_HOST: ${MERIDIAN_BACKEND_HOST}
-      MERIDIAN_BACKEND_PORT: ${MERIDIAN_BACKEND_PORT}
+      # NOTE: every var carries a :- default on purpose. Without one, a blank
+      # value in .env yields e.g. `%{HTTP:}` which matches everything and turns
+      # the header-gated router into an open proxy onto the C2 backends.
+      C2_HEADER_NAME: ${C2_HEADER_NAME:-X-Request-ID}
+      C2_HEADER_VALUE: ${C2_HEADER_VALUE:-cadre-c2}
+      MYTHIC_URI_PREFIX: ${MYTHIC_URI_PREFIX:-/cdn/media/stream}
+      MYTHIC_HTTPX_URI_PREFIX: ${MYTHIC_HTTPX_URI_PREFIX:-/media/uploads}
+      SLIVER_URI_PREFIX: ${SLIVER_URI_PREFIX:-/cloud/storage/objects}
+      HAVOC_URI_PREFIX: ${HAVOC_URI_PREFIX:-/edge/cache/assets}
+      ADAPTIX_URI_PREFIX: ${ADAPTIX_URI_PREFIX:-/api/v1/sync}
+      MERIDIAN_URI_PREFIX: ${MERIDIAN_URI_PREFIX:-/gateway/v1/telemetry}
+      MYTHIC_BACKEND_HOST: ${MYTHIC_BACKEND_HOST:-mythic_http}
+      MYTHIC_BACKEND_PORT: ${MYTHIC_BACKEND_PORT:-80}
+      MYTHIC_HTTPX_BACKEND_HOST: ${MYTHIC_HTTPX_BACKEND_HOST:-mythic_httpx}
+      MYTHIC_HTTPX_BACKEND_PORT: ${MYTHIC_HTTPX_BACKEND_PORT:-82}
+      SLIVER_BACKEND_HOST: ${SLIVER_BACKEND_HOST:-sliver}
+      SLIVER_BACKEND_PORT: ${SLIVER_BACKEND_PORT:-80}
+      HAVOC_BACKEND_HOST: ${HAVOC_BACKEND_HOST:-havoc}
+      HAVOC_BACKEND_PORT: ${HAVOC_BACKEND_PORT:-80}
+      ADAPTIX_BACKEND_HOST: ${ADAPTIX_BACKEND_HOST:-adaptix}
+      ADAPTIX_BACKEND_PORT: ${ADAPTIX_BACKEND_PORT:-80}
+      MERIDIAN_BACKEND_HOST: ${MERIDIAN_BACKEND_HOST:-meridian}
+      MERIDIAN_BACKEND_PORT: ${MERIDIAN_BACKEND_PORT:-8080}
     ports:
       - "${REDIRECTOR_HTTP_PORT}:80"
     networks:
@@ -177,6 +183,36 @@ services:
       RABBITMQ_PASSWORD: mythic
       MYTHIC_SERVER_HOST: mythic_server
       MYTHIC_SERVER_GRPC_PORT: "17444"
+      # REST port for FILE-type build parameters. httpx pulls its
+      # raw_c2_config over GET /direct/download/<agent_file_id>; without this
+      # the config check fails with
+      # "Error getting agent_config: Failed to read file from Mythic ... 404".
+      MYTHIC_SERVER_PORT: "17443"
+    depends_on:
+      - mythic_rabbitmq
+      - mythic_server
+    networks:
+      - c2_core
+      - c2_edge
+    restart: unless-stopped
+
+  # Malleable HTTP C2 profile (MythicC2Profiles/httpx) - the community-driven,
+  # JSON/TOML-configurable profile: callback domains + rotation/failover,
+  # AES256-keyed HMAC, and agent message placement/transforms (base64/xor/
+  # netbios...) supplied per build. Same Go self-registration model as
+  # mythic_http, but its listener is :82 (its config.json) and it is routed by
+  # its own prefix (/media/uploads) so both profiles can be live at once.
+  mythic_httpx:
+    image: ghcr.io/mythicc2profiles/httpx:v0.0.0.20
+    profiles: ["mythic"]
+    environment:
+      RABBITMQ_HOST: mythic_rabbitmq
+      RABBITMQ_PASSWORD: mythic
+      MYTHIC_SERVER_HOST: mythic_server
+      MYTHIC_SERVER_GRPC_PORT: "17444"
+      # httpx needs the REST port too: its config-check RPC reads the FILE-type
+      # raw_c2_config build parameter via GET /direct/download/<agent_file_id>.
+      MYTHIC_SERVER_PORT: "17443"
     depends_on:
       - mythic_rabbitmq
       - mythic_server
@@ -248,7 +284,11 @@ services:
     volumes:
       - meridian_data:/root/.meridian
     environment:
-      MERIDIAN_URI_PREFIX: ${MERIDIAN_URI_PREFIX}
+      MERIDIAN_URI_PREFIX: ${MERIDIAN_URI_PREFIX:-/gateway/v1/telemetry}
+      # Only used when seeding config.json on a FRESH state volume; an existing
+      # meridian_data volume keeps the domain it was created with (see
+      # Doc/Docker.md for the migration note).
+      MERIDIAN_DNS_DOMAIN: ${MERIDIAN_DNS_DOMAIN:-c2.cadre.local}
     ports:
       - "${MERIDIAN_DNS_PORT}:5353/udp"
     networks:

@@ -225,6 +225,21 @@ class Database:
     # --------------------------------------------------------------- results
     def insert_result(self, r: TaskResult) -> None:
         with self._lock:
+            # Reject results for unknown/foreign tasks BEFORE persisting them:
+            # task_id comes from the wire, so an implant could otherwise mark
+            # another session's queued task complete (and its task would vanish
+            # from the queue) and write forged rows into the results history.
+            owner = self._conn.execute(
+                "SELECT session_id FROM tasks WHERE id=?", (r.task_id,)
+            ).fetchone()
+            if owner is None or owner["session_id"] != r.session_id:
+                log.warning(
+                    "result %s references unknown or foreign task %s from session %s",
+                    r.status, r.task_id[:8], r.session_id[:8],
+                    extra={"event": "task_result_rejected", "task_id": r.task_id,
+                           "session_id": r.session_id},
+                )
+                return
             self._conn.execute(
                 """INSERT INTO results (id, task_id, session_id, status, exit_code,
                    stdout, stderr, data, ts) VALUES (?,?,?,?,?,?,?,?,?)""",
@@ -234,7 +249,13 @@ class Database:
                     self._pack(r.data) if r.data is not None else None, r.ts,
                 ),
             )
-            self._conn.execute("UPDATE tasks SET completed=1 WHERE id=?", (r.task_id,))
+            # Scope the completion to the owning session: task_id arrives from
+            # the wire, so without this any implant can mark another session's
+            # queued task complete and make it vanish from the task queue.
+            self._conn.execute(
+                "UPDATE tasks SET completed=1 WHERE id=? AND session_id=?",
+                (r.task_id, r.session_id),
+            )
             self._conn.commit()
         log.info(
             "result %s -> task %s (%s, exit %s)",

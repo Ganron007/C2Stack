@@ -5,3 +5,11 @@
 !Dockerfile
 !bootstrap.sh
 !bootrc.rc
+!.dockerignore
+# The Dockerfile's `RUN --mount=type=bind,source=bin` FAILS at build time when
+# the source directory does not exist, which it never does on a fresh clone
+# (everything here is ignored above). Keeping the directory in git via a
+# placeholder is what makes the documented download fallback reachable.
+!bin/
+bin/*
+!bin/.gitkeep

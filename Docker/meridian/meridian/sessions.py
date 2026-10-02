@@ -41,8 +41,21 @@ class SessionManager:
         crypto = SessionCrypto.from_exchange(
             session_id, self._priv, client_pub_b64, client_nonce_b64, server_nonce
         )
-        interval = int(profile.get("interval", default_interval)) if profile else default_interval
-        jitter = float(profile.get("jitter", default_jitter)) if profile else default_jitter
+        # Clamp both: interval goes on the wire as u16 (base.py does
+        # interval.to_bytes(2, "big"), so >65535 or <0 raises OverflowError and
+        # kills DNS KEX), and a negative interval makes the Go implant spin with
+        # no backoff. Both values can arrive from an unauthenticated KEX body.
+        raw_interval = profile.get("interval", default_interval) if profile else default_interval
+        try:
+            interval = int(raw_interval)
+        except (TypeError, ValueError):
+            interval = default_interval
+        interval = max(1, min(65535, interval))
+        raw_jitter = profile.get("jitter", default_jitter) if profile else default_jitter
+        try:
+            jitter = float(raw_jitter)
+        except (TypeError, ValueError):
+            jitter = default_jitter
         jitter = max(0.0, min(1.0, jitter))
         meta = meta or {}
 

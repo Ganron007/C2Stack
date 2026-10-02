@@ -12,32 +12,48 @@
         Require all granted
     </Directory>
 
+    # Any error raised LOCALLY (backend down, refused connect, bad gateway)
+    # must serve the decoy page too - Apache's stock error pages leak the
+    # internal container name ("DNS lookup failure for: mythic_http").
+    # Proxied backend responses (incl. their 404s) are passed through
+    # untouched, so C2-vs-decoy probes stay distinguishable.
+    ErrorDocument 500 /index.html
+    ErrorDocument 502 /index.html
+    ErrorDocument 503 /index.html
+    ErrorDocument 504 /index.html
+    ErrorDocument 404 /index.html
+
     # ----- Vhost-level routing: header + prefix match => proxy to backend -----
     RewriteEngine On
 
-    # ----- Mythic C2 -----
-    RewriteCond %{REQUEST_URI} ^${MYTHIC_URI_PREFIX}
-    RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$
+    # ----- Mythic C2 (http profile) -----
+    RewriteCond %{REQUEST_URI} ^${MYTHIC_URI_PREFIX}(/|$)
+    RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$ [NC]
     RewriteRule ^(.*)$ http://${MYTHIC_BACKEND_HOST}:${MYTHIC_BACKEND_PORT}$1 [P,L]
 
+    # ----- Mythic C2 (httpx malleable profile, listener :82) -----
+    RewriteCond %{REQUEST_URI} ^${MYTHIC_HTTPX_URI_PREFIX}(/|$)
+    RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$ [NC]
+    RewriteRule ^(.*)$ http://${MYTHIC_HTTPX_BACKEND_HOST}:${MYTHIC_HTTPX_BACKEND_PORT}$1 [P,L]
+
     # ----- Sliver C2 -----
-    RewriteCond %{REQUEST_URI} ^${SLIVER_URI_PREFIX}
-    RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$
+    RewriteCond %{REQUEST_URI} ^${SLIVER_URI_PREFIX}(/|$)
+    RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$ [NC]
     RewriteRule ^(.*)$ http://${SLIVER_BACKEND_HOST}:${SLIVER_BACKEND_PORT}$1 [P,L]
 
     # ----- Havoc C2 -----
-    RewriteCond %{REQUEST_URI} ^${HAVOC_URI_PREFIX}
-    RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$
+    RewriteCond %{REQUEST_URI} ^${HAVOC_URI_PREFIX}(/|$)
+    RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$ [NC]
     RewriteRule ^(.*)$ http://${HAVOC_BACKEND_HOST}:${HAVOC_BACKEND_PORT}$1 [P,L]
 
     # ----- Adaptix C2 -----
-    RewriteCond %{REQUEST_URI} ^${ADAPTIX_URI_PREFIX}
-    RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$
+    RewriteCond %{REQUEST_URI} ^${ADAPTIX_URI_PREFIX}(/|$)
+    RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$ [NC]
     RewriteRule ^(.*)$ http://${ADAPTIX_BACKEND_HOST}:${ADAPTIX_BACKEND_PORT}$1 [P,L]
 
     # ----- Meridian C2 -----
-    RewriteCond %{REQUEST_URI} ^${MERIDIAN_URI_PREFIX}
-    RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$
+    RewriteCond %{REQUEST_URI} ^${MERIDIAN_URI_PREFIX}(/|$)
+    RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$ [NC]
     RewriteRule ^(.*)$ http://${MERIDIAN_BACKEND_HOST}:${MERIDIAN_BACKEND_PORT}$1 [P,L]
 
     # ----- Proxy Settings -----

@@ -38,6 +38,10 @@ CHUNK = 180  # base64 chars per TXT record (response chunking)
 LABEL = 60  # max base32 chars per label
 CHUNK_SIZE = 36  # payload bytes per upload query (36B -> 58 base32 chars)
 BUFFER_TTL = 45  # seconds a buffered message/response survives
+MSGID_LEN = 16  # msgid is 8 hex chars per protocol.md; allow slack, not unbounded
+MAX_SEQ = 1024  # upper bound on chunk index (MAX_MSG_BYTES // CHUNK_SIZE)
+MAX_BUFFERS = 512  # max concurrently buffered messages before we start refusing
+MAX_CHUNKS_PER_MSG = 1024  # 1024 * 36B = 36KB cap on a single reassembled message
 
 
 def _b32e(payload: bytes) -> str:
@@ -107,24 +111,62 @@ class MeridianResolver:
         if len(parts) < 3:
             return self._reply_txt(request, ["err"])
         msgid = parts[0]
-        seq = int(parts[1])
-        chunk = _b32d("".join(parts[2:]))
+        # seq is attacker-controlled: int() accepts "1_0", "+7", " 12 " and an
+        # unbounded magnitude, which used to reach range() and hang the whole
+        # resolver under the global lock. Validate strictly and bound it.
+        if len(msgid) > MSGID_LEN or not msgid.isascii():
+            return self._reply_txt(request, ["err"])
+        seq_part = parts[1]
+        if not seq_part.isascii() or not seq_part.isdigit():
+            return self._reply_txt(request, ["err"])
+        seq = int(seq_part)
+        if seq >= MAX_SEQ:
+            return self._reply_txt(request, ["err"])
+        if len(parts[2]) > LABEL or sum(len(p) for p in parts[2:]) > LABEL:
+            return self._reply_txt(request, ["err"])
+        try:
+            chunk = _b32d("".join(parts[2:]))
+        except (ValueError, TypeError):
+            return self._reply_txt(request, ["err"])
         with self._lock:
             self._purge_locked()
-            state = self._msgs.setdefault(msgid, {"chunks": {}, "resp": None, "t": time.time()})
+            if msgid not in self._msgs and len(self._msgs) >= MAX_BUFFERS:
+                return self._reply_txt(request, ["err"])
+            state = self._msgs.get(msgid)
+            if state is None:
+                state = {"chunks": {}, "resp": None, "t": time.time()}
+                self._msgs[msgid] = state
             state["t"] = time.time()
+            if seq not in state["chunks"] and len(state["chunks"]) >= MAX_CHUNKS_PER_MSG:
+                # unbounded per-message growth: drop it rather than buffer more
+                del self._msgs[msgid]
+                return self._reply_txt(request, ["err"])
             state["chunks"][seq] = chunk
             if len(chunk) < CHUNK_SIZE or seq == 999:
                 state["done"] = True
+            dispatch = None
             if state.get("resp") is None and state.get("done") and self._complete(state):
-                try:
-                    payload = self._assemble(state)
-                    state["resp"] = self.l.dispatch(marker, msgid, payload)
-                except CryptoError:
-                    return self._reply_txt(request, ["err"])
-                except Exception as exc:
-                    log.debug("dns dispatch failed: %s", exc)
-                    return self._reply_txt(request, ["err"])
+                dispatch = self._assemble(state)
+                state["dispatching"] = True
+        if dispatch is not None:
+            # AES + SQLite work happens OUTSIDE the resolver lock, otherwise one
+            # slow dispatch stalls every other DNS query in the process.
+            try:
+                resp = self.l.dispatch(marker, msgid, dispatch)
+            except CryptoError:
+                with self._lock:
+                    self._msgs.pop(msgid, None)
+                return self._reply_txt(request, ["err"])
+            except Exception as exc:
+                log.warning("dns dispatch failed: %s", exc)
+                with self._lock:
+                    self._msgs.pop(msgid, None)
+                return self._reply_txt(request, ["err"])
+            with self._lock:
+                state = self._msgs.get(msgid)
+                if state is not None:
+                    state["resp"] = resp
+                    state.pop("dispatching", None)
         return self._reply_txt(request, ["ok"])
 
     def _complete(self, state: dict) -> bool:
@@ -132,7 +174,9 @@ class MeridianResolver:
         if not seqs:
             return False
         last = max(seqs)
-        return all(i in seqs for i in range(last + 1))
+        # O(1): chunks are unique by construction, so a full 0..last range means
+        # exactly last+1 entries (the old all(i in seqs ...) was O(last)).
+        return len(seqs) == last + 1
 
     def _assemble(self, state: dict) -> bytes:
         seqs = state["chunks"]

@@ -1,0 +1,77 @@
+{
+    "name": "cadre_media",
+    "get": {
+        "verb": "GET",
+        "uris": [
+            "/media/uploads"
+        ],
+        "client": {
+            "headers": {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+                "Accept": "application/json, text/plain, */*",
+                "X-Request-ID": "cadre-c2"
+            },
+            "parameters": {
+                "v": "2"
+            },
+            "message": {
+                "location": "query",
+                "name": "t"
+            },
+            "transforms": [
+                {
+                    "action": "base64",
+                    "value": "standard"
+                }
+            ]
+        },
+        "server": {
+            "headers": {
+                "Content-Type": "application/json"
+            },
+            "transforms": [
+                {
+                    "action": "base64",
+                    "value": "standard"
+                }
+            ]
+        }
+    },
+    "post": {
+        "verb": "POST",
+        "uris": [
+            "/media/uploads"
+        ],
+        "client": {
+            "headers": {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+                "Content-Type": "application/octet-stream",
+                "X-Request-ID": "cadre-c2"
+            },
+            "parameters": {
+                "v": "2"
+            },
+            "message": {
+                "location": "cookie",
+                "name": "mu"
+            },
+            "transforms": [
+                {
+                    "action": "base64",
+                    "value": "standard"
+                }
+            ]
+        },
+        "server": {
+            "headers": {
+                "Content-Type": "application/json"
+            },
+            "transforms": [
+                {
+                    "action": "base64",
+                    "value": "standard"
+                }
+            ]
+        }
+    }
+}

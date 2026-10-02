@@ -47,9 +47,10 @@ EXPOSE 80 31337
 # run; put it on PATH so implant generation via garble finds "go".
 ENV PATH="/root/.sliver/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-# Run the server in daemon mode. The operator creates the HTTP C2 listener via
-# sliver-client (see Doc/Docker.md): bind port 80 with
-# RootPath "/cloud/storage/objects" so the redirector can route to it.
+# bootstrap.sh starts the daemon, mints the `cadre` operator config, and creates
+# the HTTP C2 listener on :80 (the redirector's /cloud/storage/objects prefix;
+# v1.7.7 has no --rootpath flag and the server serves a catch-all route, so no
+# root-path configuration is needed or possible).
 # PATH must include the Go toolchain the server downloads to /root/.sliver/go,
 # otherwise implant generation via garble fails ("exec: go: not found").
-CMD ["sh", "-c", "export PATH=/root/.sliver/go/bin:$PATH && sliver-server daemon --lhost 0.0.0.0 --lport 31337"]
+CMD ["/bin/bash", "/bootstrap.sh"]

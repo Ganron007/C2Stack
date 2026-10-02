@@ -19,20 +19,48 @@ fi
 echo "[bootstrap] Docker is available."
 
 PROFILES=()
+NO_BUILD=0
 for arg in "$@"; do
   case "$arg" in
     --mythic|--all) PROFILES+=(--profile mythic) ;;
     --adaptix|--all) PROFILES+=(--profile adaptix) ;;
+    --no-build) NO_BUILD=1 ;;
+    *) echo "[bootstrap] Unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
 
+# Source .env so the "next steps" block below reflects the operator's actual
+# configuration instead of collapsing every ${VAR:-default} to the default.
+# set -a exports the variables for the subsequent expansions.
+set -a
+# shellcheck disable=SC1091
+. ./.env
+set +a
+
 echo "[bootstrap] Starting C2Stack stack..."
-docker compose --env-file .env "${PROFILES[@]}" up -d --build
+if [ "$NO_BUILD" -eq 1 ]; then
+  # "${PROFILES[@]}" is unsafe under `set -u` with an empty array on bash < 4.4.
+  docker compose --env-file .env ${PROFILES[@]+"${PROFILES[@]}"} up -d
+else
+  docker compose --env-file .env ${PROFILES[@]+"${PROFILES[@]}"} up -d --build
+fi
 
 
 echo
 echo "[bootstrap] Stack status:"
 docker compose --env-file .env ps
+
+# Profile-gated probe hints, built here rather than inside the heredoc below:
+# a command substitution containing a nested heredoc breaks the outer one.
+EXTRA_PROBES=""
+if [ "${#PROFILES[@]}" -gt 0 ]; then
+  EXTRA_PROBES="  # with --mythic:
+    curl -H \"\${C2_HEADER_NAME:-X-Request-ID}: \${C2_HEADER_VALUE:-cadre-c2}\" \\\\
+      http://<host-ip-on-vmnet2>:\${REDIRECTOR_HTTP_PORT:-80}\${MYTHIC_URI_PREFIX:-/cdn/media/stream}/
+  # with --adaptix (needs an HTTP listener created in the Qt client first):
+    curl -H \"\${C2_HEADER_NAME:-X-Request-ID}: \${C2_HEADER_VALUE:-cadre-c2}\" \\\\
+      http://<host-ip-on-vmnet2>:\${REDIRECTOR_HTTP_PORT:-80}\${ADAPTIX_URI_PREFIX:-/api/v1/sync}/"
+fi
 
 cat <<EOF
 
@@ -43,13 +71,15 @@ cat <<EOF
   - Sliver operator port         : ${SLIVER_CTRL_PORT:-31337}
   - Havoc teamserver port        : ${HAVOC_TS_PORT:-40056}
   - Adaptix teamserver port      : ${ADAPTIX_TS_PORT:-4321}  (Qt GUI client)
-  - Meridian DNS Listener        : <host-ip-on-vmnet2>:${MERIDIAN_DNS_PORT:-5353}/udp (DNS Covert Channel)
+  - Meridian DNS Listener        : <host-ip-on-vmnet2>:${MERIDIAN_DNS_PORT:-15353}/udp (DNS Covert Channel, zone ${MERIDIAN_DNS_DOMAIN:-c2.cadre.local})
   - Meridian HTTP Callback       : http://<host-ip-on-vmnet2>:${REDIRECTOR_HTTP_PORT:-80}${MERIDIAN_URI_PREFIX:-/gateway/v1/telemetry}
 
   Verify the redirector decoy page (no header -> CloudEdge CDN):
     curl http://<host-ip-on-vmnet2>:${REDIRECTOR_HTTP_PORT:-80}/
 
-  Verify C2 routing (with header -> backend):
+  Verify C2 routing (with header -> backend). Meridian is always enabled, so
+  probe it; the Mythic/Adaptix probes need their profiles:
     curl -H "${C2_HEADER_NAME:-X-Request-ID}: ${C2_HEADER_VALUE:-cadre-c2}" \\
-      http://<host-ip-on-vmnet2>:${REDIRECTOR_HTTP_PORT:-80}${MYTHIC_URI_PREFIX:-/cdn/media/stream}/
+      http://<host-ip-on-vmnet2>:${REDIRECTOR_HTTP_PORT:-80}${MERIDIAN_URI_PREFIX:-/gateway/v1/telemetry}/
+${EXTRA_PROBES}
 EOF

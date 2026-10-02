@@ -42,11 +42,13 @@ if (-not (Test-Path .env)) {
 }
 
 
-# 2. Docker sanity check.
-try {
-    $null = docker info 2>&1
-} catch {
-    Fail("Docker Desktop does not appear to be running. Start it and retry.")
+# 2. Docker sanity check. A failing native command does NOT throw in PowerShell
+#    (and $PSNativeCommandUseErrorActionPreference does not exist in 5.1), so the
+#    previous try/catch could never fire and "Docker is available" printed even
+#    when the engine was down. Check the exit code instead.
+$null = docker info 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Fail("Docker Desktop does not appear to be running (docker info exit $LASTEXITCODE). Start it and retry.")
 }
 Write-Host "[bootstrap] Docker is available." -ForegroundColor Green
 
@@ -69,7 +71,11 @@ if (Test-Path .env) {
         $line = $rawLine.Trim()
         if ($line -and -not $line.StartsWith("#") -and $line.Contains("=")) {
             $parts = $line.Split("=", 2)
-            $cfg[$parts[0].Trim()] = $parts[1].Trim()
+            # Strip trailing inline comments ("15353  # note") the way Compose
+            # does - .env.example uses them, and step 1 copies that file to .env
+            # on first run, so ports printed as "15353 # ..." are wrong.
+            $value = ($parts[1] -replace '\s+#.*$', '').Trim()
+            $cfg[$parts[0].Trim()] = $value
         }
     }
 }
@@ -113,9 +119,10 @@ $summary = @"
   Verify the redirector decoy page (no header -> CloudEdge CDN):
     curl http://<host-ip-on-vmnet2>:$redirectorPort/
 
-  Verify C2 routing (with header -> backend):
+  Verify C2 routing (with header -> backend). Meridian is always enabled, so
+  probe it (was hardcoded, ignoring MERIDIAN_URI_PREFIX):
     curl -H "${c2HeaderName}: $c2HeaderVal" `
-      http://<host-ip-on-vmnet2>:$redirectorPort/gateway/v1/telemetry/
+      http://<host-ip-on-vmnet2>:$redirectorPort$meridianPrefix/
 
   Adaptix operator connection (Qt GUI client on Kali):
     Configure endpoint to <host-ip-on-vmnet2>:$adaptixPort

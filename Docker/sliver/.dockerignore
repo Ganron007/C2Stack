@@ -1,0 +1,4 @@
+# Build context = Docker/sliver — only the vendored binaries are needed.
+*
+!bin/
+!Dockerfile
