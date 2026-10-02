@@ -46,6 +46,7 @@ REDIRECTOR_HOST = os.environ.get("REDIRECTOR_HOST", "127.0.0.1")
 REDIRECTOR_PORT = int(os.environ.get("REDIRECTOR_HTTP_PORT", "80"))
 C2_HEADER_NAME = os.environ.get("C2_HEADER_NAME", "X-Request-ID")
 C2_HEADER_VALUE = os.environ.get("C2_HEADER_VALUE", "cadre-c2")
+MERIDIAN_DNS_DOMAIN = os.environ.get("MERIDIAN_DNS_DOMAIN", "c2.cadre.local")
 
 FRAMEWORK_PREFIXES = {
     "meridian": os.environ.get("MERIDIAN_URI_PREFIX", "/gateway/v1/telemetry"),
@@ -189,6 +190,31 @@ def probe_tcp_port(host: str, port: int, timeout: float = 0.5) -> bool:
         return False
 
 
+def probe_dns_txt_port(host: str, port: int, domain: str, timeout: float = 1.0) -> bool:
+    """UDP liveness probe for the Meridian DNS listener.
+
+    Meridian's only published port is UDP (DNS TXT C2), so a TCP connect probe
+    always fails and reported the service as down while it was serving. Send a
+    `ping.<domain>` TXT query and accept any well-formed answer (QR set, RCODE 0).
+    """
+    def _encode_name(name: str) -> bytes:
+        out = b""
+        for label in name.split("."):
+            out += bytes([len(label)]) + label.encode("ascii")
+        return out + b"\x00"
+
+    header = b"\x12\x34\x01\x00\x00\x01" + b"\x00\x00" * 3
+    question = header + _encode_name(domain) + b"\x00\x10\x00\x01"  # QTYPE=TXT, QCLASS=IN
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.settimeout(timeout)
+            sock.sendto(question, (host, port))
+            data, _ = sock.recvfrom(4096)
+    except OSError:
+        return False
+    return len(data) > 12 and bool(data[2] & 0x80) and (data[3] & 0x0F) == 0
+
+
 def resolve_host_probe_address() -> str:
     """Published ports live on the Docker host, not in this container's
     namespace. Resolve the host gateway from the default route (falling back
@@ -264,12 +290,15 @@ def get_status() -> dict[str, Any]:
         # Check port reachability (published host ports only; string values
         # like "via redirector :80" describe internal bindings and are skipped)
         is_port_live = False
-        port_to_check = next(
-            (meta[k] for k in ("control", "teamserver", "ui", "dns", "http") if isinstance(meta.get(k), int)),
+        port_key = next(
+            (k for k in ("control", "teamserver", "ui", "dns", "http") if isinstance(meta.get(k), int)),
             None,
         )
-        if port_to_check is not None:
-            is_port_live = probe_tcp_port(PROBE_HOST, port_to_check)
+        if port_key == "dns":
+            # UDP-only published port: probe it as DNS, not as TCP
+            is_port_live = probe_dns_txt_port(PROBE_HOST, meta["dns"], MERIDIAN_DNS_DOMAIN)
+        elif port_key is not None:
+            is_port_live = probe_tcp_port(PROBE_HOST, meta[port_key])
 
         # State evaluation: running if docker says running OR if port is responding
         is_running = False

@@ -170,7 +170,27 @@ cd C2Stack/Docker
 ./docker-bootstrap.sh --all          # all four frameworks
 ```
 
-### Verified state (Sep 2026)
+### Verified state (Oct 2026 — full cold boot)
+
+Cold boot re-validated on 2026-10-02 from a host shutdown (all 11 containers had
+been SIGKILLed, exit 137). Brought up with
+`docker compose --env-file .env --profile mythic --profile adaptix up -d`
+(equivalently `.\docker-bootstrap.ps1 -All -NoBuild`); no rebuild needed, all
+images and the named volumes were intact. Re-verified after boot:
+
+| Check | Result |
+|---|---|
+| 11 containers | all `running`, `mythic_server` `healthy` |
+| Redirector matrix (4 C2 routes, header vs. no-header) | identical to baseline: with-header → backend 404 (meridian 14 B, sliver/havoc/mythic 0 B), no-header → Apache decoy 404 (311 B) |
+| Sliver | daemon up, `:80` bound (`0050`), `cadre` operator config present |
+| Havoc | profile parsed, `Started "c2stack - http" listener: http://0.0.0.0:80`, `payloads/Demon/src` + `*.bin` present, compilers resolved |
+| Adaptix | `The AdaptixC2 server is ready`, extenders + toolchain present |
+| Meridian | HTTP :8080 + DNS :5353/udp bound; DNS TXT `ping.c2.cadre.local` → `pong` through the published host port 15353 |
+| Mythic DB | `c2profile` = `1 http t`, `payloadtype` = `1 apollo t`, 81 commands, `c2stack-http` instance intact, last 2 payload builds `success` |
+| Portal | `/api/status` → all six services `port_live: true` |
+
+> Note: `restart: unless-stopped` does **not** survive a host shutdown — after a
+> reboot, bring the stack up again with the command above.
 
 - **Redirector** — vhost-level header+prefix routing to all 5 backends (no longer
   `<Location>`-based); matrix tested: correct `X-Request-ID` proxies, missing/wrong
