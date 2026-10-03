@@ -14,7 +14,18 @@ CONF="/etc/apache2/sites-available/c2stack.conf"
 # every request falls through to the decoy page. That is exactly how the httpx
 # route (MYTHIC_HTTPX_*) went missing: it was added to the template but never
 # added here.
-VARS='${C2_HEADER_NAME} ${C2_HEADER_VALUE} ${MYTHIC_URI_PREFIX} ${MYTHIC_HTTPX_URI_PREFIX} ${SLIVER_URI_PREFIX} ${HAVOC_URI_PREFIX} ${ADAPTIX_URI_PREFIX} ${MERIDIAN_URI_PREFIX} ${MYTHIC_BACKEND_HOST} ${MYTHIC_BACKEND_PORT} ${MYTHIC_HTTPX_BACKEND_HOST} ${MYTHIC_HTTPX_BACKEND_PORT} ${SLIVER_BACKEND_HOST} ${SLIVER_BACKEND_PORT} ${HAVOC_BACKEND_HOST} ${HAVOC_BACKEND_PORT} ${ADAPTIX_BACKEND_HOST} ${ADAPTIX_BACKEND_PORT} ${MERIDIAN_BACKEND_HOST} ${MERIDIAN_BACKEND_PORT}'
+# Per-route header gate. Sliver's implant never sends C2_HEADER_NAME, so its
+# route must match on path alone; every other route keeps the header check.
+# NOTE: this MUST be set before the envsubst call below - envsubst expands
+# ${SLIVER_HEADER_GATE} from the environment at that moment.
+if [ "${SLIVER_HEADER_GATE:-on}" = "off" ]; then
+  SLIVER_HEADER_GATE='%{HTTP:X-C2Stack-Route-Gate} ^1$'
+else
+  SLIVER_HEADER_GATE='%{HTTP:'"${C2_HEADER_NAME}"'} ^'"${C2_HEADER_VALUE}"'$ [NC]'
+fi
+export SLIVER_HEADER_GATE
+
+VARS='${C2_HEADER_NAME} ${C2_HEADER_VALUE} ${MYTHIC_URI_PREFIX} ${MYTHIC_HTTPX_URI_PREFIX} ${SLIVER_URI_PREFIX} ${HAVOC_URI_PREFIX} ${ADAPTIX_URI_PREFIX} ${MERIDIAN_URI_PREFIX} ${MYTHIC_BACKEND_HOST} ${MYTHIC_BACKEND_PORT} ${MYTHIC_HTTPX_BACKEND_HOST} ${MYTHIC_HTTPX_BACKEND_PORT} ${SLIVER_BACKEND_HOST} ${SLIVER_BACKEND_PORT} ${HAVOC_BACKEND_HOST} ${HAVOC_BACKEND_PORT} ${ADAPTIX_BACKEND_HOST} ${ADAPTIX_BACKEND_PORT} ${MERIDIAN_BACKEND_HOST} ${MERIDIAN_BACKEND_PORT} ${SLIVER_HEADER_GATE}'
 
 envsubst "${VARS}" < "${TEMPLATE}" > "${CONF}"
 

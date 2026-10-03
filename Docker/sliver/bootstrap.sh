@@ -66,6 +66,22 @@ printf 'cadre\n' | sliver-client import /tmp/cadre.op.cfg >/dev/null 2>&1 || tru
 # so the redirector's /cloud/storage/objects prefix needs no root-path config.
 # "port 80 is in use" on a re-run is expected: Sliver restores the persisted
 # listener from its DB on boot, so this line is a no-op after the first start.
+# Recreate the HTTP listener from scratch every boot.
+# Sliver persists listener jobs in its DB and restores them on daemon start, so
+# a listener created BEFORE the 'edge' website existed (or with different flags)
+# comes back bound to :80 WITHOUT --website. bootrc's create then fails with
+# "port 80 is in use" and the static content the implant needs (/assets,
+# /scripts, /bundles) 404s, so the agent polls forever and never registers.
+# Killing first makes the flags authoritative on every start.
+log "clearing any persisted HTTP listener on :80"
+cat > /tmp/killjobs.rc <<'RC'
+jobs -K
+exit
+RC
+timeout 90 sliver-client console --rc /tmp/killjobs.rc 2>/dev/null || true
+rm -f /tmp/killjobs.rc
+sleep 2
+
 log "creating HTTP listener on :80 via /bootrc.rc"
 if ! sliver-client console --rc /bootrc.rc; then
   log "WARN: console exited non-zero (see output above)"

