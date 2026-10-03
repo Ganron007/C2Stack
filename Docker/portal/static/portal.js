@@ -475,7 +475,9 @@ function opsRenderSessions(sessions) {
         String(opsSelected.id) === String(s.id)) {
       tr.className = 'selected';
     }
-    const proc = [s.process, s.pid ? 'pid ' + s.pid : ''].filter(Boolean).join(' / ');
+    // Meridian records no process name (only a pid), so fall back to the pid
+    // rather than rendering a bare "?".
+    const proc = [s.process, s.pid ? 'pid ' + s.pid : ''].filter(Boolean).join(' / ') || '—';
     tr.innerHTML =
       '<td><span class="fw-tag">' + (s.backend || '?').toUpperCase() + '</span></td>' +
       '<td>' + (s.hostname || '?') + (s.transport ? ' <small>(' + s.transport + ')</small>' : '') + '</td>' +

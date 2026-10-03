@@ -183,13 +183,18 @@ def meridian_sessions() -> list[dict[str, Any]]:
         out.append({
             "id": s.get("id", ""),
             "backend": "meridian",
-            "hostname": s.get("hostname", "?"),
-            "username": s.get("user", "?"),
+            "hostname": s.get("hostname") or s.get("host") or "?",
+            "username": s.get("user") or s.get("username") or "?",
             "os": f"{s.get('os','?')} {s.get('arch','')}".strip(),
+            # meridian's session record has no process-name field (verified
+            # against `meridian sessions --json`), only a pid. Showing the pid
+            # alone beats a bare "?" which read as missing data.
+            "process": "",
+            "pid": s.get("pid") or s.get("process_id") or "",
             "transport": "HTTP" if s.get("listener") == "http" else "DNS TXT",
             "interval": s.get("interval"),
             "last_seen": s.get("last_seen", 0),
-            "is_alive": bool(s.get("alive", False)),
+            "is_alive": bool(s.get("alive", s.get("is_alive", False))),
         })
     return out
 
