@@ -1,77 +1,63 @@
 {
+  "cadre_media": {
     "name": "cadre_media",
     "get": {
-        "verb": "GET",
-        "uris": [
-            "/media/uploads"
-        ],
-        "client": {
-            "headers": {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-                "Accept": "application/json, text/plain, */*",
-                "X-Request-ID": "cadre-c2"
-            },
-            "parameters": {
-                "v": "2"
-            },
-            "message": {
-                "location": "query",
-                "name": "t"
-            },
-            "transforms": [
-                {
-                    "action": "base64",
-                    "value": "standard"
-                }
-            ]
+      "verb": "GET",
+      "uris": [
+        "/media/uploads/index"
+      ],
+      "client": {
+        "headers": {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
         },
-        "server": {
-            "headers": {
-                "Content-Type": "application/json"
-            },
-            "transforms": [
-                {
-                    "action": "base64",
-                    "value": "standard"
-                }
-            ]
-        }
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "query",
+          "name": "q"
+        },
+        "transforms": [
+          {
+            "action": "base64url",
+            "value": ""
+          }
+        ]
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Server": "NetDNA-cache/2.2"
+        },
+        "transforms": []
+      }
     },
     "post": {
-        "verb": "POST",
-        "uris": [
-            "/media/uploads"
-        ],
-        "client": {
-            "headers": {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-                "Content-Type": "application/octet-stream",
-                "X-Request-ID": "cadre-c2"
-            },
-            "parameters": {
-                "v": "2"
-            },
-            "message": {
-                "location": "cookie",
-                "name": "mu"
-            },
-            "transforms": [
-                {
-                    "action": "base64",
-                    "value": "standard"
-                }
-            ]
+      "verb": "POST",
+      "uris": [
+        "/media/uploads/data"
+      ],
+      "client": {
+        "headers": {
+          "Keep-Alive": "true",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
         },
-        "server": {
-            "headers": {
-                "Content-Type": "application/json"
-            },
-            "transforms": [
-                {
-                    "action": "base64",
-                    "value": "standard"
-                }
-            ]
-        }
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "body",
+          "name": ""
+        },
+        "transforms": []
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Keep-Alive": "true"
+        },
+        "transforms": []
+      }
     }
+  }
 }

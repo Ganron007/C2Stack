@@ -1,0 +1,59 @@
+{
+    "name": "cadre_media",
+    "get": {
+        "verb": "GET",
+        "uris": [
+            "/media/uploads/index"
+        ],
+        "client": {
+            "headers": {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+                "X-Request-ID": "cadre-c2"
+            },
+            "parameters": {},
+            "message": {
+                "location": "query",
+                "name": "q"
+            },
+            "transforms": [
+                {
+                    "action": "base64url",
+                    "value": ""
+                }
+            ]
+        },
+        "server": {
+            "headers": {
+                "Content-Type": "application/json",
+                "Server": "NetDNA-cache/2.2"
+            },
+            "transforms": []
+        }
+    },
+    "post": {
+        "verb": "POST",
+        "uris": [
+            "/media/uploads/data"
+        ],
+        "client": {
+            "headers": {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+                "X-Request-ID": "cadre-c2",
+                "Keep-Alive": "true"
+            },
+            "parameters": {},
+            "message": {
+                "location": "body",
+                "name": ""
+            },
+            "transforms": []
+        },
+        "server": {
+            "headers": {
+                "Content-Type": "application/json",
+                "Keep-Alive": "true"
+            },
+            "transforms": []
+        }
+    }
+}

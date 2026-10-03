@@ -213,6 +213,14 @@ services:
       # httpx needs the REST port too: its config-check RPC reads the FILE-type
       # raw_c2_config build parameter via GET /direct/download/<agent_file_id>.
       MYTHIC_SERVER_PORT: "17443"
+    volumes:
+      # httpx registers its gin routes ONLY from agent_configs.json, and it is
+      # written into the container filesystem by the build's config-check step.
+      # Without a volume every recreate/reboot wipes it back to "{}" and the
+      # listener accepts TCP but serves no routes (502 through the redirector).
+      # Mounting our own seed config guarantees routes exist from first boot;
+      # the build still merges its own variations into the file at runtime.
+      - ./mythic/httpx/agent_config.json:/Mythic/httpx/c2_code/agent_configs.json
     depends_on:
       - mythic_rabbitmq
       - mythic_server
