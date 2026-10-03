@@ -102,7 +102,8 @@ def run_rc(commands: list[str], timeout: int = 90) -> str:
     return out
 
 
-def _parse_table(out: str, id_keys=("ID",)) -> list[dict[str, str]]:
+def _parse_table(out: str, id_keys=("ID",),
+                 require: tuple[str, ...] = ("Transport", "Hostname")) -> list[dict[str, str]]:
     """Parse a console table by splitting on multi-space runs.
 
     Header-position slicing drifts whenever a row's value is wider than its
@@ -113,7 +114,7 @@ def _parse_table(out: str, id_keys=("ID",)) -> list[dict[str, str]]:
     lines = [ln for ln in out.split("\n") if ln.strip()]
     header_idx = None
     for i, ln in enumerate(lines):
-        if all(k in ln for k in id_keys) and ("Transport" in ln or "Hostname" in ln):
+        if all(k in ln for k in id_keys) and any(k in ln for k in require):
             header_idx = i
             break
     if header_idx is None:
@@ -202,6 +203,10 @@ def task(session_id: str, command: str, timeout: int = 150) -> dict[str, Any]:
     `command` is split like a shell line, so quoting works, but `>`, `|`
     and `&&` are passed literally. For shell features wrap explicitly, e.g.
     `cmd.exe "/c whoami > C:\\out.txt"`.
+
+    If the id is a BEACON rather than a session, the task is queued via the
+    console instead (beacons pick tasks up on checkin): the response carries
+    `queued: <task-id>` and no output. Poll beacon_tasks() for completion.
     """
     try:
         argv = shlex.split(command, posix=True)
@@ -218,10 +223,7 @@ def task(session_id: str, command: str, timeout: int = 150) -> dict[str, Any]:
     err = _clean(done.stderr)
     blob = out + ("\n" + err if err else "")
     if "Please select a session or beacon" in blob:
-        raise BackendError(
-            f"sliver has no taskable session {session_id!r} (beacons cannot "
-            "be tasked with --use; open an interactive session from the "
-            "beacon first)")
+        return task_beacon(session_id, command)
     if "no such session" in blob.lower() or "invalid session" in blob.lower():
         raise BackendError(f"sliver rejected session {session_id}: {blob[-300:]}")
     # Output section follows "[*] Output:"; rpc failures surface as rpc error.
@@ -231,6 +233,49 @@ def task(session_id: str, command: str, timeout: int = 150) -> dict[str, Any]:
     return {"ok": "rpc error" not in blob.lower(), "backend": "sliver",
             "session_id": session_id, "command": command,
             "output": text.strip()[:8000], "raw": blob.strip()[:2000]}
+
+
+def task_beacon(beacon_id: str, command: str) -> dict[str, Any]:
+    """Queue a task on a BEACON via the console (`beacons -i` works in rc).
+
+    Beacons execute on next checkin (~60s) and results surface in beacon
+    task state, so this returns a task id to poll, not output. Raises if the
+    id is neither a beacon nor a session.
+    """
+    try:
+        argv = shlex.split(command, posix=True)
+    except ValueError as exc:
+        raise BackendError(f"could not parse command: {exc}") from exc
+    if not argv:
+        raise BackendError("empty command")
+    out = run_rc([f"beacons -i {beacon_id}", "execute -o " + " ".join(argv)],
+                 timeout=60)
+    m = re.search(r"Tasked beacon \S+ \(([0-9a-f]+)\)", out)
+    if not m:
+        raise BackendError(
+            f"sliver accepted neither session nor beacon {beacon_id!r}: "
+            f"{out[-300:]}")
+    return {"ok": True, "backend": "sliver", "session_id": beacon_id,
+            "command": command, "queued": m.group(1), "async": True,
+            "output": "",
+            "note": "beacon task queued; executes on next checkin "
+                    "(~60s). Poll /api/ops/sliver/tasks for completion."}
+
+
+def beacon_tasks(beacon_id: str) -> list[dict[str, Any]]:
+    """Task states for one beacon: id, state, type, created/sent/completed."""
+    out = run_rc([f"beacons -i {beacon_id}", "tasks"], timeout=90)
+    rows = []
+    for r in _parse_table(out, require=("State",)):
+        rows.append({
+            "id": r.get("ID", ""),
+            "state": r.get("State", ""),
+            "type": r.get("Message Type", r.get("Type", "")),
+            "created": r.get("Created", ""),
+            "sent": r.get("Sent", ""),
+            "completed": r.get("Completed", ""),
+        })
+    return rows
 
 
 def generate(kind: str, c2_url: str, target_os: str = "windows",

@@ -46,6 +46,17 @@ fi
 a2ensite c2stack.conf
 apache2ctl configtest
 
+# OPSEC: minimise the server fingerprint. ServerTokens is server-level only
+# (illegal inside <VirtualHost>), so it lives in this conf-enabled snippet.
+# Result: `Server: Apache` instead of `Apache/2.4.68 (Debian)`. Fully
+# removing the header needs mod_security and is out of scope; the version +
+# distro leak is what matters for shodan-style fingerprinting.
+cat > /etc/apache2/conf-enabled/c2stack-security.conf <<'EOF'
+ServerTokens Prod
+ServerSignature Off
+EOF
+apache2ctl configtest
+
 echo "[redirector] C2 header: ${C2_HEADER_NAME}: ${C2_HEADER_VALUE}"
 echo "[redirector] routes: mythic=${MYTHIC_URI_PREFIX} -> ${MYTHIC_BACKEND_HOST}:${MYTHIC_BACKEND_PORT}, mythic-httpx=${MYTHIC_HTTPX_URI_PREFIX} -> ${MYTHIC_HTTPX_BACKEND_HOST}:${MYTHIC_HTTPX_BACKEND_PORT}, sliver=${SLIVER_URI_PREFIX} -> ${SLIVER_BACKEND_HOST}:${SLIVER_BACKEND_PORT}, havoc=${HAVOC_URI_PREFIX} -> ${HAVOC_BACKEND_HOST}:${HAVOC_BACKEND_PORT}, adaptix=${ADAPTIX_URI_PREFIX} -> ${ADAPTIX_BACKEND_HOST}:${ADAPTIX_BACKEND_PORT}, meridian=${MERIDIAN_URI_PREFIX} -> ${MERIDIAN_BACKEND_HOST}:${MERIDIAN_BACKEND_PORT}"
 

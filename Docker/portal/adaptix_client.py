@@ -38,6 +38,69 @@ ADAPTIX_OPERATOR = "operator1"
 _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36")
 
+#: AxScript command catalogue for the beacon agent, taken from the examples
+#: embedded in extenders/beacon_agent/ax_config.axs (the same strings the Qt
+#: client shows). The portal passes these verbatim to /agent/command/raw.
+#: Each entry: example invocation + what it does. Per-command live results
+#: are tracked in doc/internal/CAPABILITY-MATRIX.md.
+COMMANDS: dict[str, dict[str, str]] = {
+    # --- execution ---
+    "shell":      {"example": "shell whoami /all",
+                   "help": "Execute command via cmd.exe"},
+    "powershell": {"example": "powershell Get-Process",
+                   "help": "Execute command via powershell.exe"},
+    "bof":        {"example": "execute bof /home/user/whoami.o",
+                   "help": "Execute a Beacon Object File in current process memory"},
+    # --- recon / identity ---
+    "getuid":     {"example": "getuid",
+                   "help": "User ID of the current token"},
+    "ps":         {"example": "ps list",
+                   "help": "Process manager: list | kill <pid> | run <exe>"},
+    "ls":         {"example": "ls C:\\Windows",
+                   "help": "List directory or file details"},
+    "pwd":        {"example": "pwd", "help": "Print current working directory"},
+    "cd":         {"example": "cd C:\\Windows",
+                   "help": "Change current working directory"},
+    "cat":        {"example": "cat C:\\file.exe",
+                   "help": "Read first 2048 bytes of a file"},
+    "disks":      {"example": "disks", "help": "List mounted drives"},
+    # --- files ---
+    "download":   {"example": "download C:\\Temp\\file.txt",
+                   "help": "Download a file from the agent"},
+    "upload":     {"example": "upload /tmp/file.txt C:\\Temp\\file.txt",
+                   "help": "Upload a file to the agent"},
+    "mkdir":      {"example": "mkdir C:\\Temp", "help": "Make a directory"},
+    "rm":         {"example": "rm C:\\Temp\\file.txt",
+                   "help": "Remove a file or folder"},
+    "mv":         {"example": "mv src.txt dst.txt", "help": "Move file"},
+    "cp":         {"example": "cp src.txt dst.txt", "help": "Copy file"},
+    "exfil":      {"example": "exfil",
+                   "help": "Manage downloads: cancel|start|stop <id>"},
+    # --- beacon profile ---
+    "sleep":      {"example": "sleep 30m5s 10",
+                   "help": "Set sleep time and jitter"},
+    "profile":    {"example": "profile workingtime 8:00-17:30",
+                   "help": "killdate | workingtime profiles"},
+    "burst":      {"example": "burst show",
+                   "help": "DNS burst mode: show | set ..."},
+    "interact":   {"example": "interact", "help": "Set sleep 0 (interactive)"},
+    "terminate":  {"example": "terminate process",
+                   "help": "thread (beacon only) | process (kill agent)"},
+    # --- pivoting / tunnels ---
+    "link":       {"example": "link tcp 192.168.1.2 8888",
+                   "help": "Pivot: smb <ip> <pipe> | tcp <ip> <port>"},
+    "unlink":     {"example": "unlink 1a2b3c4d",
+                   "help": "Disconnect a pivot agent"},
+    "lportfwd":   {"example": "lportfwd start 127.0.0.1 8080 192.168.1.1 8080",
+                   "help": "Local port forward: start | stop ..."},
+    "rportfwd":   {"example": "rportfwd start 8080 10.10.10.14 8080",
+                   "help": "Remote port forward: start | stop ..."},
+    "socks":      {"example": "socks start 1080",
+                   "help": "SOCKS 4a/5 proxy: start [port] | stop ..."},
+    "jobs":       {"example": "jobs list",
+                   "help": "Long-running tasks: list | kill <id>"},
+}
+
 
 class AdaptixClient:
     def __init__(self, host: str = ADAPTIX_HOST, port: int = ADAPTIX_PORT,

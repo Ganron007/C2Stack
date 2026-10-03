@@ -114,6 +114,21 @@ class MythicClient:
             raise BackendError(f"mythic GET {path} failed: {exc}") from exc
 
 
+def mythic_task_output(task_id: int) -> list[str]:
+    """Response texts for one Mythic task, oldest first.
+
+    In this stack task.stdout only ever holds the creation-time notice (the
+    agent's process_response sets no output, so the server never overwrites
+    it). The agent's REAL output lives in the `response` table (bytea) — see
+    matrix §1.3. Read that instead of pretending stdout has the answer.
+    """
+    rows = mythic_psql(
+        "SELECT convert_from(response, 'UTF8') FROM response "
+        f"WHERE task_id={int(task_id)} ORDER BY id;",
+        ["text"])
+    return [r["text"] for r in rows if r.get("text")]
+
+
 def mythic_psql(sql: str, columns: list[str] | None = None) -> list[dict[str, str]]:
     """Run a query inside the Mythic postgres container. Returns [] on failure
     so callers can distinguish 'no rows' from 'unreachable' via is_available()."""

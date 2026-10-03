@@ -418,7 +418,10 @@ async function initFleetRadar() {
 const OPS_PRESETS = {
   meridian: ['whoami', 'ipconfig /all', 'net user', 'whoami > C:\\Users\\vagrant\\out.txt'],
   mythic:   ['whoami', 'ipconfig /all', 'net user', 'whoami > C:\\Users\\vagrant\\out.txt'],
-  havoc:    ['whoami', 'ipconfig /all', 'net user', 'whoami > C:\\Users\\vagrant\\out.txt'],
+  havoc:    ['whoami', 'shell whoami', 'powershell Get-Process', 'ls C:\\',
+             'ps', 'cat C:\\Windows\\System32\\drivers\\etc\\hosts',
+             'sleep 10', 'token list', 'net domain', 'config Sleep',
+             'whoami > C:\\Users\\vagrant\\out.txt'],
   adaptix:  ['getuid', 'ls C:\\Users\\vagrant', 'ps list',
              'shell whoami', 'powershell whoami /priv',
              'shell whoami > C:\\Users\\vagrant\\out.txt'],
@@ -507,20 +510,47 @@ function opsSelect(session, row) {
     '<br><small>session id: ' + session.id + '</small>';
 
   // Presets are framework-specific; showing another framework's syntax would
-  // just produce "unknown command" errors.
+  // just produce "unknown command" errors. The live catalogue
+  // (/api/ops/catalogues) wins when loaded; the static list is the fallback.
+  opsRenderPresets(session.backend);
+
+  opsSetOutput('Session selected. Enter a command and press Execute.', '');
+}
+
+let opsCatalogues = null;
+async function opsLoadCatalogues() {
+  if (opsCatalogues) return opsCatalogues;
+  try {
+    const res = await fetch('/api/ops/catalogues');
+    if (res.ok) opsCatalogues = await res.json();
+  } catch (err) {
+    opsCatalogues = null;
+  }
+  return opsCatalogues;
+}
+
+function opsRenderPresets(backend) {
   const presets = document.getElementById('ops-presets');
   presets.innerHTML = '';
-  (OPS_PRESETS[session.backend] || OPS_PRESETS.mythic).forEach(cmd => {
+  let cmds = OPS_PRESETS[backend] || OPS_PRESETS.mythic;
+  if (opsCatalogues && opsCatalogues[backend]) {
+    const cat = opsCatalogues[backend];
+    cmds = Object.entries(cat).map(([name, spec]) =>
+      spec.example ? spec.example + '  # ' + spec.help : name);
+  }
+  cmds.forEach(cmd => {
     const b = document.createElement('button');
-    b.textContent = cmd.length > 42 ? cmd.slice(0, 42) + '…' : cmd;
+    const shown = cmd.length > 42 ? cmd.slice(0, 42) + '…' : cmd;
+    b.textContent = shown;
     b.title = cmd;
     b.addEventListener('click', () => {
-      document.getElementById('ops-command').value = cmd;
+      // Catalogue entries carry a trailing "# help" comment for display;
+      // strip it before filling the command box.
+      document.getElementById('ops-command').value =
+        cmd.replace(/\s+#\s+.*$/, '');
     });
     presets.appendChild(b);
   });
-
-  opsSetOutput('Session selected. Enter a command and press Execute.', '');
 }
 
 async function opsRefresh() {
@@ -611,8 +641,11 @@ function opsShowResult(backend, data) {
     }
     meta.textContent = tasks.length + ' completed task(s)';
   } else if (backend === 'mythic') {
-    text = typeof data.result === 'string' ? data.result : JSON.stringify(data.result, null, 2);
-    meta.textContent = 'queued (read output from the Mythic UI oplog)';
+    const r = data.result || {};
+    // Output comes from the response table (task.stdout never carries it
+    // in this stack). Falls back to the raw envelope while polling.
+    text = r.output || JSON.stringify(data.result, null, 2);
+    meta.textContent = 'task ' + (r.id || r.display_id || '');
   } else if (backend === 'meridian') {
     text = typeof data.result === 'string' ? data.result : JSON.stringify(data.result, null, 2);
     meta.textContent = 'queued (read output from the meridian results table)';
@@ -696,6 +729,11 @@ async function opsRunBuild() {
 }
 
 function initOpsConsole() {
+  // Load the tasking vocabularies in the background; preset buttons upgrade
+  // to catalogue examples (with help text) once it arrives.
+  opsLoadCatalogues().then(() => {
+    if (opsSelected) opsRenderPresets(opsSelected.backend);
+  });
   document.getElementById('ops-refresh').addEventListener('click', opsRefresh);
   document.getElementById('ops-run').addEventListener('click', opsRunTask);
   document.getElementById('build-run').addEventListener('click', opsRunBuild);

