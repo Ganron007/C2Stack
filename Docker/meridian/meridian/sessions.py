@@ -8,11 +8,20 @@ import time
 
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
-from .crypto import SessionCrypto, b64d, b64e, new_salt
+from .crypto import CryptoError, SessionCrypto, b64d, b64e, new_salt
 from .db import Database
 from .models import Session, new_id
 
 log = logging.getLogger("meridian.session")
+
+#: Hard ceiling on sessions (live key material held). KEX is unauthenticated,
+#: so without a cap anyone can mint sessions until memory/SQLite fall over.
+MAX_SESSIONS = 1024
+
+#: A session with no checkin for longer than this is reaped to dead (and its
+#: key material dropped). Conservative on purpose: max(5 min, 10x interval).
+REAP_GRACE = 300.0
+REAP_FACTOR = 10.0
 
 
 class SessionManager:
@@ -36,6 +45,13 @@ class SessionManager:
         default_interval: int = 30,
         default_jitter: float = 0.2,
     ) -> dict:
+        with self._lock:
+            if len(self._crypto) >= MAX_SESSIONS:
+                log.warning(
+                    "kex refused: session table full (%d)", len(self._crypto),
+                    extra={"event": "kex_refused_full"},
+                )
+                raise CryptoError("session table full")
         session_id = new_id()
         server_nonce = b64e(new_salt())
         crypto = SessionCrypto.from_exchange(
@@ -97,11 +113,8 @@ class SessionManager:
 
     # ---------------------------------------------------------------- checkin
     def checkin(self, session_id: str, results: list[dict], meta: dict | None = None) -> None:
-        self.touch(session_id)
-        if meta:
-            self.enrich(session_id, meta)
-        for r in results:
-            self._db.insert_result(_result_from_wire(r, session_id))
+        wire = [_result_from_wire(r, session_id) for r in results]
+        self._db.apply_checkin(session_id, wire, meta, time.time())
 
     def enrich(self, session_id: str, meta: dict) -> None:
         """Merge late-arriving host metadata (used when KEX carries no meta)."""
@@ -130,7 +143,32 @@ class SessionManager:
         return self._db.get_session(session_id)
 
     def list(self) -> list[Session]:
+        self.reap()
         return self._db.list_sessions()
+
+    def reap(self, now: float | None = None) -> int:
+        """Mark sessions with long-missed checkins dead and drop their keys.
+
+        Without this the table fills with corpses: `alive` stays 1 forever
+        and key material is held for sessions that will never check in again.
+        Called on every listing; only writes when something actually expired.
+        """
+        now = time.time() if now is None else now
+        expired = [
+            s.id for s in self._db.list_sessions()
+            if s.alive and now - s.last_seen > max(REAP_GRACE, s.interval * REAP_FACTOR)
+        ]
+        if not expired:
+            return 0
+        with self._lock:
+            for sid in expired:
+                self._db.mark_dead(sid)
+                self._crypto.pop(sid, None)
+        log.info(
+            "reaped %d dead session(s)", len(expired),
+            extra={"event": "sessions_reaped", "count": len(expired)},
+        )
+        return len(expired)
 
     def close(self, session_id: str) -> None:
         with self._lock:

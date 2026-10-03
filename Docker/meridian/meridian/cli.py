@@ -11,13 +11,14 @@ App instance (listeners run in background threads).
 Automation hooks (machine-readable output for external orchestrators):
     $ meridian sessions --json
     $ meridian results --json [SESSION]
-    $ meridian exec-cmd --json <session> <cmd...>
+    $ meridian exec --json <session> <cmd...>
 """
 
 from __future__ import annotations
 
 import base64
 import json
+import logging
 import shlex
 import sys
 import threading
@@ -34,6 +35,25 @@ from .config import ListenerConfig
 from .models import TaskResult
 
 console = Console()
+log = logging.getLogger("meridian.console")
+
+
+#: Returned by _opt when the flag is present but has no value after it.
+_MISSING = object()
+
+
+def _opt(args: list[str], *flags: str):
+    """Value following the first of `flags`; _MISSING if the flag trails with
+    no value; None if no flag present.
+
+    Finding #26: several commands indexed blindly into argv (`args[1]` after
+    `--out`, `args[i+1]` after `--name`), so a trailing flag crashed the
+    console with IndexError instead of printing usage.
+    """
+    for i, a in enumerate(args):
+        if a in flags:
+            return args[i + 1] if i + 1 < len(args) else _MISSING
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -59,22 +79,33 @@ def _session_table(app: App) -> Table:
 def _result_reader(app: App, get_session: callable) -> threading.Thread:
     """Background thread that streams new results into the console."""
 
-    last: dict[str, float] = {}
+    shown: set[str] = set()
+    last_ts = 0.0
 
     def run() -> None:
+        nonlocal last_ts
         while True:
             try:
-                results = app.tasks.results()
-                for r in results:
-                    sid = r.session_id
-                    if r.id in last:
+                cur = get_session()
+                if not cur:
+                    time.sleep(1)
+                    continue
+                # Session-scoped + incremental: no more full-table scan every
+                # second (finding #17). `shown` only ever holds this session's
+                # recent ids; entries older than the watermark are pruned.
+                for r in app.tasks.results(cur, since=last_ts):
+                    if r.ts > last_ts:
+                        last_ts = r.ts
+                    if r.id in shown:
                         continue
-                    last[r.id] = r.ts
-                    cur = get_session()
-                    if cur and cur == sid:
-                        _print_result(r)
-            except Exception:
-                pass
+                    shown.add(r.id)
+                    _print_result(r)
+                if len(shown) > 4096:
+                    shown.clear()
+            except Exception as exc:
+                # Finding #27: this used to swallow everything silently, so a
+                # broken results query looked exactly like "no new results".
+                log.debug("result reader failed: %s", exc)
             time.sleep(1)
 
     th = threading.Thread(target=run, daemon=True)
@@ -223,8 +254,12 @@ def run_console(app: App) -> None:
             sid = need_session()
             if not sid or not args:
                 continue
-            interval = int(args[0])
-            jitter = int(args[1]) / 100.0 if len(args) > 1 else 0.2
+            try:
+                interval = int(args[0])
+                jitter = int(args[1]) / 100.0 if len(args) > 1 else 0.2
+            except ValueError:
+                console.print("[red]usage: sleep <sec> [jitter%][/red]")
+                continue
             app.tasks.create(sid, "builtin/sleep", {"interval": interval, "jitter": jitter})
             console.print(f"queued rebeacon: {interval}s ±{jitter * 100:.0f}%")
         elif cmd == "exit_implant":
@@ -240,12 +275,13 @@ def run_console(app: App) -> None:
         elif cmd == "module":
             _cmd_module(app, args, current["session"])
         elif cmd == "report":
-            out = "report.md"
-            fmt = "markdown"
-            if args and args[0] in ("--out", "-o"):
-                out = args[1]
-            if "--fmt" in args:
-                fmt = args[args.index("--fmt") + 1]
+            out = _opt(args, "--out", "-o")
+            fmt = _opt(args, "--fmt")
+            if out is _MISSING or fmt is _MISSING:
+                console.print("[red]usage: report [--out F] [--fmt F][/red]")
+                continue
+            out = out or "report.md"
+            fmt = fmt or "markdown"
             from .modules.serverside.export import ExportModule
 
             m = ExportModule()
@@ -274,10 +310,20 @@ def _cmd_listener(app: App, args: list[str]) -> None:
             console.print(usage)
             return
         transport = args[1]
-        port = int(args[2])
-        name = "--name" in args and args[args.index("--name") + 1] or transport
-        host = "--host" in args and args[args.index("--host") + 1] or "0.0.0.0"
-        domain = "--domain" in args and args[args.index("--domain") + 1] or "c2.example"
+        try:
+            port = int(args[2])
+        except ValueError:
+            console.print(f"[red]bad port: {args[2]}[/red]")
+            return
+        name = _opt(args, "--name")
+        host = _opt(args, "--host")
+        domain = _opt(args, "--domain")
+        if name is _MISSING or host is _MISSING or domain is _MISSING:
+            console.print(f"[red]{usage} (a flag is missing its value)[/red]")
+            return
+        name = name or transport
+        host = host or "0.0.0.0"
+        domain = domain or "c2.example"
         try:
             cfg = ListenerConfig(
                 name=name, transport=transport, host=host, port=port, domain=domain
@@ -306,8 +352,26 @@ def _cmd_listener(app: App, args: list[str]) -> None:
             console.print(f"{running} [cyan]{li.name}[/cyan] {li.transport}://{li.host}:{li.port}")
 
 
+def _resolve_session(app: App, prefix: str | None) -> str | None:
+    """Resolve a session id prefix to a full id (exact match passes through).
+
+    The one-shot `exec` resolves prefixes but `results` did not, so
+    `results 8e7252ec` silently printed "no results" while the rows existed
+    under the full id.
+    """
+    if not prefix:
+        return None
+    exact = app.sessions.get(prefix)
+    if exact is not None:
+        return exact.id
+    match = [s for s in app.sessions.list() if s.id.startswith(prefix)]
+    if not match:
+        return None
+    return match[0].id
+
+
 def _cmd_results(app: App, sid: str | None) -> None:
-    results = app.tasks.results(sid)
+    results = app.tasks.results(_resolve_session(app, sid) or sid)
     if not results:
         console.print("[dim]no results[/dim]")
         return
@@ -462,7 +526,15 @@ def exec_cmd(app: App, session: str, command: tuple[str], as_json: bool):
 @click.pass_obj
 def results(app: App, session: str | None, as_json: bool):
     """List task results (optionally for one session)."""
-    results = app.tasks.results(session)
+    resolved = _resolve_session(app, session)
+    if session and resolved is None:
+        if as_json:
+            json.dump({"error": "no such session"}, sys.stdout)
+            sys.stdout.write("\n")
+        else:
+            click.echo("no such session", err=True)
+        return
+    results = app.tasks.results(resolved)
     if as_json:
         rows = []
         for r in results:
@@ -477,6 +549,9 @@ def results(app: App, session: str | None, as_json: bool):
                 "ts": r.ts,
                 "stdout_b64": base64.b64encode(r.stdout).decode(),
                 "stderr_b64": base64.b64encode(r.stderr).decode(),
+                # builtin/download retrieves file bytes here; without this
+                # key downloads were stored in the DB but unreachable.
+                "data_b64": base64.b64encode(r.data).decode() if r.data is not None else None,
             })
         json.dump(rows, sys.stdout)
         sys.stdout.write("\n")

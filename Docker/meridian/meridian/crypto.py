@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import base64
 import os
+import threading
+import time
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric.x25519 import (
@@ -48,6 +50,14 @@ class CryptoError(Exception):
     """Raised on any cryptographic failure (bad key, tamper, replay)."""
 
 
+class ReplayError(CryptoError):
+    """A byte-identical envelope seen before.
+
+    Subclassed so the wire handlers can answer idempotently ("ok" — the first
+    delivery already ran) while every other crypto failure stays a rejection.
+    """
+
+
 def b64e(data: bytes) -> str:
     return base64.b64encode(data).decode()
 
@@ -63,6 +73,12 @@ def new_salt() -> bytes:
     return os.urandom(SALT_LEN)
 
 
+#: How many recent inbound nonces are remembered per session for replay
+#: detection, and how long a nonce stays in the window.
+REPLAY_WINDOW = 1024
+REPLAY_TTL = 24 * 3600
+
+
 class SessionCrypto:
     """Holds one session's key material and envelope (de)serialization."""
 
@@ -70,6 +86,31 @@ class SessionCrypto:
         self.session_id = session_id
         self.key = key
         self._aad = f"{AAD_INFO}/{session_id}".encode()
+        # Inbound nonces already accepted. AES-GCM envelopes carry random
+        # nonces, so any repeat is either a replayed checkin (which would
+        # re-dispatch tasks and duplicate results) or nonce misuse. Reject it.
+        # Guarded by a lock: listeners open envelopes from several threads
+        # (aiohttp loop, DNS resolver pool).
+        self._seen_lock = threading.Lock()
+        self._seen: dict[bytes, float] = {}
+
+    def _check_replay(self, nonce: bytes) -> None:
+        now = time.time()
+        with self._seen_lock:
+            first = self._seen.get(nonce)
+            if first is not None:
+                raise ReplayError("replayed envelope")
+            if len(self._seen) >= REPLAY_WINDOW:
+                # Bound memory: evict the oldest quarter of the window.
+                for old in sorted(self._seen, key=self._seen.get)[: len(self._seen) // 4]:
+                    del self._seen[old]
+            else:
+                # Opportunistic TTL expiry while we hold the lock anyway.
+                cutoff = now - REPLAY_TTL
+                for old, ts in list(self._seen.items()):
+                    if ts < cutoff:
+                        del self._seen[old]
+            self._seen[nonce] = now
 
     @classmethod
     def from_exchange(
@@ -114,9 +155,13 @@ class SessionCrypto:
         if len(nonce) != NONCE_LEN:
             raise CryptoError("bad nonce length")
         try:
-            return AESGCM(self.key).decrypt(nonce, ct, self._aad)
+            plaintext = AESGCM(self.key).decrypt(nonce, ct, self._aad)
         except Exception as exc:
             raise CryptoError("decryption failed") from exc
+        # Only after successful authentication: rejecting before decrypt
+        # would let anyone with a guessed nonce mount a DoS on the session.
+        self._check_replay(nonce)
+        return plaintext
 
     # ------------------------------------------------ compact binary framing
     def seal_compact(self, plaintext: bytes) -> bytes:
@@ -131,9 +176,11 @@ class SessionCrypto:
         nonce = framed[1 : 1 + NONCE_LEN]
         ct = framed[1 + NONCE_LEN :]
         try:
-            return AESGCM(self.key).decrypt(nonce, ct, self._aad)
+            plaintext = AESGCM(self.key).decrypt(nonce, ct, self._aad)
         except Exception as exc:
             raise CryptoError("decryption failed") from exc
+        self._check_replay(nonce)
+        return plaintext
 
 
 def generate_server_keypair() -> tuple[str, str]:

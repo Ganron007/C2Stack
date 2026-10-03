@@ -41,7 +41,20 @@ class Listener(abc.ABC):
 
     def stop(self) -> None:
         self.running = False
-        self._shutdown()
+        try:
+            self._shutdown()
+        finally:
+            # Finding #11: stop() never joined the serve thread, so a stopped
+            # listener's thread (and, for DNS, its bound socket) lingered and
+            # a restart died on rebind.
+            th, self._thread = self._thread, None
+            if th is not None and th is not threading.current_thread():
+                th.join(timeout=10)
+                if th.is_alive():
+                    log.warning(
+                        "listener '%s' thread did not exit on stop", self.name,
+                        extra={"event": "listener_stop_hung", "listener": self.name},
+                    )
         log.info(
             "listener '%s' stopped", self.name,
             extra={"event": "listener_stop", "listener": self.name},

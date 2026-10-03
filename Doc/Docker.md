@@ -278,9 +278,23 @@ the rest are created from the operator consoles:
   plain API paths and the redirector's `/gateway/v1/telemetry` prefixed path. The DNS
   listener listens on `0.0.0.0:5353/udp` inside the container (domain `c2.cadre.local`);
   the host-facing UDP port is `MERIDIAN_DNS_PORT` (default `15353` — Windows mDNS
-  occupies 5353). Implants configured for the redirector must set
-  `MERIDIAN_HTTP=<redirector>:80`, `MERIDIAN_URI_PREFIX=/gateway/v1/telemetry`, and the
+  occupies 5353).
+
+  **DNS domain migration note.** `MERIDIAN_DNS_DOMAIN` is baked into
+  `<state>/config.json` when the `meridian_data` volume is first created; an
+  existing volume keeps the domain it was created with even if you change the
+  env var later. The server logs a `dns_domain_drift` warning in that case.
+  To move domains, either edit `config.json` inside the volume or recreate it
+  (`docker compose down -v` — destroys sessions/tasks too).
+
+  Implants configured for the redirector must set
+  `MERIDIAN_HTTP=http://<redirector>:80` (scheme required),
+  `MERIDIAN_URI_PREFIX=/gateway/v1/telemetry`, and the
   `X-Request-ID: cadre-c2` header (defaults in `implant/main.go`).
+  The implant requests `MERIDIAN_HTTP + MERIDIAN_URI_PREFIX + /api/v1/...`, so
+  the route path must appear in exactly ONE of the two vars — putting it in
+  both doubles the prefix and the implant never checks in (verified:
+  single prefix → backend 400, doubled prefix → backend 404).
 
 ### Runtime dependency & implant-generation verification
 

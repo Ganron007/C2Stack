@@ -36,8 +36,11 @@ crash.*.log
 C2Stack/Docker/.env
 .env
 
-# Internal engineering notes (gitignored)
-internal/
+# Internal engineering notes (gitignored). Root-anchored on purpose: a bare
+# `internal/` also matches source trees like
+# Docker/meridian/implant/internal/ and silently swallows new files there.
+# This already hid Docker/meridian tests until it was narrowed.
+/internal/
 Doc/internal/
 doc/internal/
 

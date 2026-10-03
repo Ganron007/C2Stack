@@ -307,6 +307,12 @@ services:
       # meridian_data volume keeps the domain it was created with (see
       # Doc/Docker.md for the migration note).
       MERIDIAN_DNS_DOMAIN: ${MERIDIAN_DNS_DOMAIN:-c2.cadre.local}
+      # Backend header gate: the HTTP listener itself rejects requests without
+      # this header (404), so anything reaching meridian:8080 directly — not
+      # just through the redirector — is gated too. Same values as the
+      # redirector gate; unset to disable (direct-backend lab use).
+      MERIDIAN_REQUIRE_HEADER_NAME: ${C2_HEADER_NAME:-X-Request-ID}
+      MERIDIAN_REQUIRE_HEADER_VALUE: ${C2_HEADER_VALUE:-cadre-c2}
     ports:
       - "${MERIDIAN_DNS_PORT}:5353/udp"
     networks:

@@ -240,6 +240,10 @@ def meridian_results(session_id: str | None = None) -> list[dict[str, Any]]:
             "exit_code": r.get("exit_code"),
             "stdout": decoded,
             "ts": r.get("ts"),
+            # builtin/download file bytes (None for other modules). Surfaced
+            # so retrieved files are actually reachable from the portal.
+            "data_b64": r.get("data_b64"),
+            "data_size": len(r.get("data_b64") or "") * 3 // 4,
         })
     return out
 

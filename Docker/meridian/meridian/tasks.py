@@ -41,5 +41,7 @@ class TaskManager:
         if self._registry is not None:
             self._registry.on_result(r, session_id)
 
-    def results(self, session_id: str | None = None) -> list[TaskResult]:
-        return self._db.list_results(session_id)
+    def results(
+        self, session_id: str | None = None, since: float | None = None
+    ) -> list[TaskResult]:
+        return self._db.list_results(session_id, since)
