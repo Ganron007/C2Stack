@@ -65,6 +65,7 @@
       <button class="tab-btn" data-tab="tab-dns">📡 DNS TXT Covert Dissector</button>
       <button class="tab-btn" data-tab="tab-payloads">⚡ Payload Studio</button>
       <button class="tab-btn" data-tab="tab-fleet">🎯 Fleet Radar</button>
+      <button class="tab-btn" data-tab="tab-ops">🖥️ Operations Console</button>
     </nav>
 
     <!-- Main Content Panels -->
@@ -343,6 +344,114 @@
               <!-- Injected via JS -->
             </tbody>
           </table>
+        </div>
+      </section>
+
+      <!-- TAB 6: OPERATIONS CONSOLE - live sessions + real tasking -->
+      <section id="tab-ops" class="tab-pane">
+        <div class="pane-header">
+          <div>
+            <h2>Operations Console</h2>
+            <p>Live sessions from every framework, and real tasking against them.
+               Nothing on this tab is simulated - a backend that is down is
+               reported as down.</p>
+          </div>
+          <div class="ops-actions">
+            <button class="btn btn-secondary" id="ops-refresh">↻ Refresh Sessions</button>
+            <label class="auto-refresh">
+              <input type="checkbox" id="ops-auto"> auto (15s)
+            </label>
+          </div>
+        </div>
+
+        <!-- Per-backend health, each with its own error if it is unreachable -->
+        <div class="backend-chips" id="backend-chips">
+          <!-- Injected via JS -->
+        </div>
+
+        <div class="ops-layout">
+          <!-- Session list -->
+          <div class="ops-sessions card">
+            <h3>Live Sessions <span class="count-badge" id="ops-count">0</span></h3>
+            <table class="fleet-table ops-table">
+              <thead>
+                <tr>
+                  <th>Framework</th>
+                  <th>Host</th>
+                  <th>User</th>
+                  <th>Process / PID</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="ops-tbody">
+                <tr><td colspan="5" class="empty-row">Loading live sessions…</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Tasking console -->
+          <div class="ops-console card">
+            <h3>Tasking Console</h3>
+            <div id="ops-target" class="ops-target empty">
+              Select a session on the left to start tasking.
+            </div>
+
+            <div class="input-group">
+              <label>Command (native syntax for the selected framework)</label>
+              <input type="text" id="ops-command" class="code-input"
+                     placeholder="whoami" autocomplete="off">
+            </div>
+
+            <div class="cmd-presets" id="ops-presets">
+              <!-- Injected via JS: framework-appropriate commands -->
+            </div>
+
+            <button class="btn btn-primary" id="ops-run">▶ Execute Task</button>
+
+            <div class="ops-output-wrap">
+              <div class="ops-output-head">
+                <span>Output</span>
+                <span id="ops-output-meta" class="ops-meta"></span>
+              </div>
+              <pre class="ops-output" id="ops-output">Results appear here.</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Payload build: real server-side compiles -->
+        <div class="card ops-build">
+          <h3>Payload Builds <span class="hint-inline">compiled server-side by the teamserver</span></h3>
+          <div class="build-row">
+            <div class="input-group">
+              <label>Framework</label>
+              <select id="build-fw" class="code-input">
+                <option value="adaptix">Adaptix - beacon</option>
+                <option value="havoc">Havoc - Demon</option>
+              </select>
+            </div>
+            <div class="input-group" id="build-arch-wrap">
+              <label>Arch</label>
+              <select id="build-arch" class="code-input">
+                <option value="x64">x64</option>
+                <option value="x86">x86</option>
+              </select>
+            </div>
+            <div class="input-group" id="build-fmt-wrap">
+              <label>Format</label>
+              <select id="build-fmt" class="code-input">
+                <option value="Exe">Exe</option>
+                <option value="Service Exe">Service Exe</option>
+                <option value="DLL">DLL</option>
+                <option value="Shellcode">Shellcode</option>
+              </select>
+            </div>
+            <div class="input-group" id="build-sleep-wrap">
+              <label>Sleep</label>
+              <input type="text" id="build-sleep" class="code-input" value="30s">
+            </div>
+            <button class="btn btn-primary" id="build-run">⚙ Build Payload</button>
+          </div>
+          <pre class="ops-output build-out" id="build-output">No build run yet.</pre>
         </div>
       </section>
 

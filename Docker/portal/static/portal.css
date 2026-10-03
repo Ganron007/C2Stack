@@ -912,3 +912,104 @@ body {
   .split-view { grid-template-columns: 1fr; }
   .studio-layout { grid-template-columns: 1fr; }
 }
+
+/* ===================================================================
+   OPERATIONS CONSOLE - live sessions + real tasking
+   =================================================================== */
+.ops-actions { display: flex; align-items: center; gap: .75rem; }
+.auto-refresh {
+  display: flex; align-items: center; gap: .35rem;
+  font-size: .78rem; color: var(--text-muted); cursor: pointer;
+  user-select: none;
+}
+
+/* Per-backend health chips. Each backend reports independently, so a
+   failure is shown on its own chip rather than blanking the whole strip. */
+.backend-chips {
+  display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem;
+}
+.backend-chip {
+  display: flex; align-items: center; gap: .45rem;
+  padding: .4rem .7rem; border-radius: 6px;
+  border: 1px solid var(--border-dim);
+  background: var(--bg-card); font-size: .78rem;
+  cursor: default;
+}
+.backend-chip .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.backend-chip.ok    .dot { background: var(--green-base); box-shadow: 0 0 6px var(--green-base); }
+.backend-chip.down  .dot { background: var(--crimson-glow); }
+.backend-chip .name { font-weight: 600; letter-spacing: .04em; }
+.backend-chip .detail {
+  color: var(--text-muted); font-family: var(--font-mono); font-size: .7rem;
+  max-width: 46ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.backend-chip.down .detail { color: var(--crimson-glow); }
+
+.ops-layout {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1rem; align-items: start;
+}
+@media (max-width: 1100px) { .ops-layout { grid-template-columns: 1fr; } }
+
+.ops-sessions h3, .ops-console h3, .ops-build h3 {
+  display: flex; align-items: center; gap: .5rem;
+  margin: 0 0 .75rem; font-size: .95rem;
+}
+.count-badge {
+  background: var(--cyan-base); color: #04121a;
+  border-radius: 10px; padding: 0 .5rem;
+  font-size: .72rem; font-weight: 700; font-family: var(--font-mono);
+}
+.hint-inline {
+  font-size: .72rem; color: var(--text-muted); font-weight: 400;
+}
+
+.ops-table td { font-size: .8rem; }
+.ops-table .fw-tag {
+  font-family: var(--font-mono); font-size: .68rem; text-transform: uppercase;
+  letter-spacing: .06em; padding: .15rem .4rem; border-radius: 4px;
+  border: 1px solid currentColor;
+}
+.ops-table tr.selected { background: rgba(0, 212, 255, .1); }
+.ops-table tr.selected td:first-child { box-shadow: inset 3px 0 0 var(--cyan-base); }
+.ops-table button { padding: .2rem .55rem; font-size: .72rem; }
+.empty-row { text-align: center; color: var(--text-muted); font-style: italic; }
+
+.ops-target {
+  padding: .6rem .75rem; border-radius: 6px; margin-bottom: .85rem;
+  border: 1px solid var(--border-dim); background: var(--bg-secondary);
+  font-family: var(--font-mono); font-size: .78rem;
+}
+.ops-target.empty { color: var(--text-muted); font-style: italic; font-family: inherit; }
+.ops-target .fw-tag { margin-right: .4rem; }
+
+.cmd-presets { display: flex; flex-wrap: wrap; gap: .35rem; margin: .6rem 0 .8rem; }
+.cmd-presets button {
+  font-family: var(--font-mono); font-size: .72rem;
+  padding: .25rem .5rem; border-radius: 4px;
+  border: 1px solid var(--border-dim); background: var(--bg-secondary);
+  color: var(--text-muted); cursor: pointer;
+}
+.cmd-presets button:hover { color: var(--cyan-base); border-color: var(--cyan-base); }
+
+.ops-output-wrap { margin-top: .9rem; }
+.ops-output-head {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: .72rem; color: var(--text-muted); text-transform: uppercase;
+  letter-spacing: .08em; margin-bottom: .3rem;
+}
+.ops-meta { font-family: var(--font-mono); text-transform: none; letter-spacing: 0; }
+.ops-output {
+  margin: 0; padding: .75rem; border-radius: 6px;
+  background: #05080c; border: 1px solid var(--border-dim);
+  color: #b8f5d8; font-family: var(--font-mono); font-size: .78rem;
+  line-height: 1.45; max-height: 340px; overflow: auto; white-space: pre-wrap;
+  word-break: break-word;
+}
+.ops-output.err { color: #ff9a9a; border-color: rgba(255, 90, 90, .45); }
+.ops-output.busy { color: var(--amber-light); }
+
+.ops-build { margin-top: 1rem; }
+.build-row { display: flex; flex-wrap: wrap; gap: .75rem; align-items: flex-end; }
+.build-row .input-group { min-width: 130px; }
+.build-out { margin-top: .8rem; max-height: 260px; }
