@@ -1,0 +1,58 @@
+# C2Stack operator workstation (Kali desktop in Docker)
+#
+# Overlay compose file - it does NOT change the default stack. Use it with:
+#   docker compose --env-file .env -f docker-compose.yml -f docker-compose.kali.yml --profile kali up -d kali
+#
+# Why this exists: Havoc and Adaptix can only be driven from Qt GUI clients, so
+# C2Stack cannot be made "100% functional" for those two without an operator
+# desktop. This provides one in Docker with a browser-based console (noVNC on
+# :6080) and a shared folder for exchanging payloads/clients with the host.
+
+name: c2stack
+
+services:
+  kali:
+    image: kalilinux/kali-rolling:latest
+    container_name: c2stack-kali
+    profiles: ["kali"]
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      DISPLAY: ":0"
+      VNC_PASSWORD: "${KALI_VNC_PASSWORD:-cadre}"
+    ports:
+      - "${KALI_NOVNC_PORT:-6080}:6080"
+      - "${KALI_VNC_PORT:-5900}:5900"
+    volumes:
+      - "${KALI_SHARE_DIR:-./kali-share}:/root/share"
+    networks:
+      - c2_edge
+      - c2_core
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        set -e
+        export DEBIAN_FRONTEND=noninteractive
+        echo "[kali] installing desktop + build toolchain (first boot takes a few minutes)..."
+        apt-get update -qq
+        apt-get install -y -qq --no-install-recommends \
+          xvfb x11vnc novnc websockify fluxbox xterm git wget curl unzip \
+          mingw-w64 nasm build-essential cmake pkg-config libssl-dev \
+          libgl1-mesa-dri libxkbcommon-x11-0 libdbus-1-3 \
+          qt6-base-dev libqt6svg6-dev 2>/dev/null || true
+        Xvfb :0 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset &
+        sleep 3
+        export DISPLAY=:0
+        fluxbox >/dev/null 2>&1 &
+        x11vnc -display :0 -rfbport 5900 -passwd "$${VNC_PASSWORD:-cadre}" -forever -shared &
+        sleep 1
+        websockify --web=/usr/share/novnc 6080 localhost:5900 &
+        echo "[kali] noVNC: http://localhost:6080/vnc.html?password=$${VNC_PASSWORD:-cadre}"
+        exec sleep infinity
+    tty: true
+    stdin_open: true
+    restart: unless-stopped

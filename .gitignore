@@ -39,6 +39,11 @@ C2Stack/Docker/.env
 # Internal engineering notes (gitignored)
 internal/
 Doc/internal/
+doc/internal/
+
+# Kali operator workstation: build tree + shared payload exchange folder.
+# docker-compose.kali.yml IS tracked; only the working dir is not.
+Docker/kali-share/
 
 # Python bytecode & test cache
 __pycache__/
