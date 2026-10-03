@@ -107,6 +107,13 @@ services:
       context: ./havoc
     volumes:
       - havoc_data:/opt/havoc/teamserver/data
+      # Bind-mount the repo profile OVER the one inside the data volume.
+      # The teamserver runs as `./havoc server -d` with no -profile flag, so it
+      # loads /opt/havoc/teamserver/data/havoc.yaotl - which the named volume
+      # otherwise shadows with a stale copy. That drift is invisible until a
+      # payload is built: the beacon bakes in the listener Hosts, so a stale
+      # profile makes every callback go to the wrong address with no error.
+      - ./havoc/havoc.yaotl:/opt/havoc/teamserver/data/havoc.yaotl:ro
     ports:
       - "${HAVOC_TS_PORT}:40056"
     networks:

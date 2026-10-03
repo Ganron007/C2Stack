@@ -22,7 +22,7 @@ RUN apt-get update -qq \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py c2backends.py adaptix_client.py ./
+COPY app.py c2backends.py adaptix_client.py havoc_client.py sliver_client.py ./
 COPY static/ ./static/
 
 ENV PYTHONUNBUFFERED=1

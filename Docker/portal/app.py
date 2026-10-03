@@ -672,10 +672,11 @@ import c2backends as cb  # noqa: E402
 
 class TaskRequest(BaseModel):
     session_id: str = Field(..., description="Session/callback id")
-    backend: str = Field(..., description="meridian | mythic")
+    backend: str = Field(..., description="meridian | mythic | havoc | adaptix")
     command: str = Field(..., description="Raw command line (alias commands take "
                                            "a plain string, not JSON)")
     callback_id: int | None = Field(None, description="Mythic callback id")
+    wait: int = Field(25, description="Seconds to collect output")
 
 
 @app.get("/api/ops/summary")
@@ -742,7 +743,18 @@ def ops_summary() -> dict[str, Any]:
 
 @app.post("/api/ops/task")
 def ops_task(req: TaskRequest) -> dict[str, Any]:
-    """Queue a real command against a live session."""
+    """Queue a real command against a live session, on any backend.
+
+    Each framework gets its own calling convention - the caller passes the
+    native syntax for that framework:
+      mythic    the raw command line; `shell` is an alias so params must be
+                the plain string, not JSON
+      meridian  the raw command line
+      adaptix   an AxScript command (getuid, ls <dir>, ps list,
+                shell <cmdline>, powershell <cmdline>)
+      havoc     a shell command line; the portal wraps it in the ProcModule
+                task the GUI builds
+    """
     try:
         if req.backend == "meridian":
             return {"ok": True, "backend": "meridian",
@@ -755,10 +767,117 @@ def ops_task(req: TaskRequest) -> dict[str, Any]:
                               {"input": {"command": "shell", "params": req.command,
                                          "callback_id": cid}})
             return {"ok": True, "backend": "mythic", "result": out}
+        if req.backend == "adaptix":
+            import adaptix_client as ax
+            ac = ax.AdaptixClient()
+            ac.login()
+            return {"ok": True, "backend": "adaptix",
+                    "result": ac.agent_command_raw(req.session_id, req.command),
+                    "results": ac.completed_tasks(req.session_id, limit=10)}
+        if req.backend == "havoc":
+            import havoc_client as hv
+            return {"ok": True, "backend": "havoc",
+                    "result": hv._run(hv.HavocClient().task(
+                        req.session_id, req.command, wait=float(req.wait)))}
         raise HTTPException(status_code=400,
                             detail=f"unsupported backend '{req.backend}'")
     except cb.BackendError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/ops/sessions")
+def ops_sessions() -> dict[str, Any]:
+    """Live sessions across every framework that can be queried headlessly.
+
+    Backends are independent: each reports its own error rather than being
+    silently dropped, and nothing is invented when a backend is unreachable.
+    """
+    sessions: list[dict[str, Any]] = []
+    backends: dict[str, Any] = {}
+
+    try:
+        rows = cb.mythic_psql(
+            "SELECT id, host, user, pid, os, architecture, active, dead, "
+            "process_name, description FROM callback ORDER BY id DESC LIMIT 50;",
+            ["id", "host", "user", "pid", "os", "architecture", "active", "dead",
+             "process_name", "description"])
+        for r in rows:
+            sessions.append({
+                "id": str(r.get("id")),
+                "backend": "mythic",
+                "hostname": r.get("host") or "?",
+                "username": r.get("user") or "?",
+                "os": f"{r.get('os','?')} {r.get('architecture','')}".strip(),
+                "pid": r.get("pid"),
+                "process": r.get("process_name") or "?",
+                "description": r.get("description") or "",
+                "is_alive": r.get("active") == "t" and r.get("dead") == "f",
+            })
+        backends["mythic"] = {"ok": True, "count": len(rows)}
+    except Exception as exc:  # noqa: BLE001
+        backends["mythic"] = {"ok": False, "error": str(exc)[:200]}
+
+    try:
+        m = cb.meridian_sessions()
+        sessions.extend(m)
+        backends["meridian"] = {"ok": True, "count": len(m)}
+    except Exception as exc:  # noqa: BLE001
+        backends["meridian"] = {"ok": False, "error": str(exc)[:200]}
+
+    try:
+        import havoc_client as hv
+        h = hv._run(hv.HavocClient().list_sessions())
+        for s in h:
+            sessions.append({
+                "id": s["id"], "backend": "havoc",
+                "hostname": s.get("computer") or "?",
+                "username": s.get("username") or "?",
+                "os": " ".join(x for x in (s.get("os"), s.get("os_build")) if x),
+                "pid": s.get("pid"), "is_alive": True,
+                "elevated": s.get("elevated"),
+                "process": s.get("process"),
+                "listener": s.get("listener"),
+                "sleep": s.get("sleep"),
+            })
+        backends["havoc"] = {"ok": True, "count": len(h)}
+    except Exception as exc:  # noqa: BLE001
+        backends["havoc"] = {"ok": False, "error": str(exc)[:200]}
+
+    try:
+        import adaptix_client as ax
+        ac = ax.AdaptixClient()
+        ac.login()
+        agents = ac.list_agents() or []
+        if isinstance(agents, dict):
+            agents = agents.get("agents") or agents.get("data") or []
+        for a in agents:
+            sessions.append({
+                "id": str(a.get("a_id")), "backend": "adaptix",
+                "hostname": a.get("a_computer") or "?",
+                "username": a.get("a_username") or "?",
+                "os": a.get("a_os_desc") or "?",
+                "pid": a.get("a_pid"), "is_alive": True,
+                "elevated": a.get("a_elevated"),
+                "process": a.get("a_process"),
+                "listener": a.get("a_listener"),
+                "domain": a.get("a_domain"),
+                "internal_ip": a.get("a_internal_ip"),
+            })
+        backends["adaptix"] = {"ok": True, "count": len(agents)}
+    except Exception as exc:  # noqa: BLE001
+        backends["adaptix"] = {"ok": False, "error": str(exc)[:200]}
+
+    try:
+        import sliver_client as sc
+        sl = sc.sessions()
+        for s in sl:
+            s["backend"] = "sliver"
+            sessions.append(s)
+        backends["sliver"] = {"ok": True, "count": len(sl)}
+    except Exception as exc:  # noqa: BLE001
+        backends["sliver"] = {"ok": False, "error": str(exc)[:200]}
+
+    return {"count": len(sessions), "sessions": sessions, "backends": backends}
 
 
 @app.get("/api/ops/results")
