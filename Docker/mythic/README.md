@@ -62,12 +62,32 @@ All done via the REST API (no mythic-cli, no browser UI needed):
 5. **Download**: `GET /direct/download/<payload_uuid>` (JWT auth) → .exe
 
 Key gotchas learned (all verified):
-- `callback_host` must NOT include a port (the OPSEC check rejects it; port
-  goes in `callback_port` separately).
+- `callback_host` must be BARE (`http://<redir>`, no port — OPSEC rejects
+  ports) and `post_uri` the FULL path (`/cdn/media/stream/data`): a rooted
+  post_uri REPLACES any base path (`ParseURLAndPort`), so a path-carrying
+  host + `data` silently phones `http://host/data` into the decoy.
 - `c2_instance` in the create webhook must be a **JSON string**, not an object.
+- `payloadDefinition` in createpayload_webhook must ALSO be a JSON string,
+  and `build_parameters` a LIST of `{name, value}` (a dict is rejected, yet
+  the build still queues with defaults — silent wrong-config builds).
+- Webhook replies arrive as CONCATENATED json objects (`{...}{...}`).
 - The `id` field (not `c2_profile_id`) is used in start_stop_profile_webhook.
 - Apollo's `rabbitmq_config.json` MUST include `mythic_server_host` +
   `mythic_server_port` or payload uploads fail with "Cannot connect to host none".
+- **Task output lives in the `response` table, never `task.stdout`**
+  (Apollo's `process_response` sets Success with no output mapping, so the
+  server never overwrites the creation-time notice). The portal reads
+  `response` and returns inline output.
+- Operator file upload is multipart ONLY (`task_upload_file_webhook`,
+  field `file`); JSON bodies get "Missing file in form". Portal mirror:
+  `POST /api/ops/mythic/upload`.
+- Registry keying is broken upstream: any real path fails the build
+  (`Config.cs: CS1009`, build params are stamped unescaped).
+- Headless builds: `POST /api/ops/mythic/build` (returns uuid immediately;
+  poll `/api/ops/mythic/build/<uuid>`; fetch
+  `/api/ops/mythic/payload/<uuid>`). Include loader commands
+  (`execute_coff`, `register_coff`, `register_file`) in `commands` or COFF
+  flows fail with "unknown command".
 
 ## Why not v4.0?
 

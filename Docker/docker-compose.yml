@@ -346,6 +346,7 @@ services:
       MYTHIC_PASSWORD: ${MYTHIC_ADMIN_PASSWORD:-mythic}
       MYTHIC_DB_CONTAINER: c2stack-mythic_postgres-1
       WS01_SSH: "${WS01_SSH_TARGET:-analyst_t1@192.168.77.62}"
+      VICTIM_REDIRECTOR_IP: ${VICTIM_REDIRECTOR_IP:-192.168.77.1}
       WS01_SSH_KEY: /root/.ssh/cadre-ws01-key
       MERIDIAN_URI_PREFIX: ${MERIDIAN_URI_PREFIX:-/gateway/v1/telemetry}
       SLIVER_URI_PREFIX: ${SLIVER_URI_PREFIX:-/cloud/storage/objects}

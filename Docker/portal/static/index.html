@@ -428,6 +428,7 @@
                 <option value="adaptix">Adaptix - beacon</option>
                 <option value="havoc">Havoc - Demon</option>
                 <option value="sliver">Sliver - session implant</option>
+                <option value="mythic">Mythic - Apollo</option>
               </select>
             </div>
             <div class="input-group" id="build-arch-wrap">
@@ -450,9 +451,38 @@
               <label>Sleep</label>
               <input type="text" id="build-sleep" class="code-input" value="30s">
             </div>
+            <div class="input-group" id="build-moutput-wrap" style="display:none">
+              <label>Apollo output</label>
+              <select id="build-moutput" class="code-input">
+                <option value="WinExe">WinExe</option>
+                <option value="Shellcode">Shellcode</option>
+                <option value="Service">Service</option>
+                <option value="Source">Source</option>
+              </select>
+            </div>
+            <div class="input-group" id="build-mdebug-wrap" style="display:none">
+              <label>Debug</label>
+              <select id="build-mdebug" class="code-input">
+                <option value="false">release</option>
+                <option value="true">debug</option>
+              </select>
+            </div>
+            <div class="input-group" id="build-mkeying-wrap" style="display:none">
+              <label>Keying (method:value)</label>
+              <input type="text" id="build-mkeying" class="code-input"
+                     placeholder="Hostname:WS01" autocomplete="off">
+            </div>
             <button class="btn btn-primary" id="build-run">⚙ Build Payload</button>
           </div>
           <pre class="ops-output build-out" id="build-output">No build run yet.</pre>
+          <div class="build-row" id="stage-row" style="margin-top:.6rem">
+            <div class="input-group">
+              <label>Stage operator file (Mythic COFF / Havoc upload bytes)</label>
+              <input type="file" id="stage-file" class="code-input">
+            </div>
+            <button class="btn btn-secondary" id="stage-run">⬆ Stage in Mythic</button>
+            <span class="hint-inline" id="stage-status">No file staged.</span>
+          </div>
         </div>
       </section>
 
