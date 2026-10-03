@@ -133,8 +133,9 @@ C2Stack/Docker/
 │   ├── meridian/             # python server package
 │   └── implant/              # parallax Go implant source (stdlib only)
 ├── sliver/                   # vendored v1.7.7 release binaries (SHA256-pinned) + Dockerfile
-│   ├── bootstrap.sh          # daemon + operator config + HTTP listener (auto at start)
-│   └── bootrc.rc             # rc script: http listener :80 rootpath /cloud/storage/objects
+│   └── bootstrap.sh          # daemon + operator config + HTTP listener (auto at start;
+│                             # writes its own boot.rc: --lhost must be the explicit
+│                             # container IPv4, 0.0.0.0 binds [::]-only and refuses IPv4)
 ├── havoc/                    # vendored Havoc source (GPL-3.0) + Dockerfile (toolchains baked)
 │   └── havoc.yaotl           # C2Stack teamserver profile: HTTP listener :80 (redirector)
 ├── adaptix/                  # vendored Adaptix source (GPL-3.0) + Dockerfile (built in-repo)

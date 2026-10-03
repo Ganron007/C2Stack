@@ -85,12 +85,13 @@ services:
     build:
       context: ./sliver
     # bootstrap.sh starts the daemon, mints the 'cadre' operator config and
-    # creates the HTTP C2 listener (bind :80, RootPath /cloud/storage/objects)
-    # so payloads call back through the redirector out of the box.
+    # creates the HTTP C2 listener on :80 (explicit container IPv4 --lhost,
+    # website edge) so payloads call back through the redirector out of the
+    # box. There is no rootpath knob: the server catch-all routes any path
+    # under the redirector's /cloud/storage/objects prefix to the implant.
     volumes:
       - sliver_data:/root/.sliver
       - ./sliver/bootstrap.sh:/bootstrap.sh:ro
-      - ./sliver/bootrc.rc:/bootrc.rc:ro
     entrypoint: ["/bin/bash", "/bootstrap.sh"]
     ports:
       - "${SLIVER_CTRL_PORT}:31337"

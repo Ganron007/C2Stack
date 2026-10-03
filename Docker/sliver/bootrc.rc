@@ -1,2 +1,0 @@
-http --lhost 0.0.0.0 --lport 80 --website edge
-exit

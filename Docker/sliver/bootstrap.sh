@@ -55,10 +55,9 @@ printf 'cadre\n' | sliver-client import /tmp/cadre.op.cfg >/dev/null 2>&1 || tru
 # rejected command surfaces ("unknown flag: ..."). On a re-run Sliver restores
 # the persisted listener itself and this prints "port 80 is in use", which is
 # harmless and expected.
-# NOTE: /bootrc.rc holds only the two commands, no comments - Sliver's rc
-# parser treats a '#' line as an unknown command ("rc line N error: unknown
+# NOTE: the rc file holds only commands, no comments - Sliver's rc parser
+# treats a '#' line as an unknown command ("rc line N error: unknown
 # command "#""), so the rationale for these flags lives here instead.
-#   http --lhost 0.0.0.0 --lport 80
 # v1.7.7 has NO --rootpath flag (supported: -d/--domain, -w/--website,
 # -L/--lhost, -l/--lport, -D/--disable-otp, -T, -J); cobra rejected the old
 # line and the error was swallowed, so nothing listened on :80. The server
@@ -82,23 +81,42 @@ timeout 90 sliver-client console --rc /tmp/killjobs.rc 2>/dev/null || true
 rm -f /tmp/killjobs.rc
 sleep 2
 
-log "creating HTTP listener on :80 via /bootrc.rc"
-if ! sliver-client console --rc /bootrc.rc; then
+# --lhost MUST be the explicit container IPv4, never 0.0.0.0: with 0.0.0.0
+# Sliver binds [::]:80 only and every IPv4 SYN gets RST (verified: the old
+# 127.0.0.1 post-check passed for months while other containers were refused).
+# The usable address is the one peers resolve us as: intersect `hostname -i`
+# with `getent hosts sliver`.
+sliver_ip=""
+for cand in $(hostname -i); do
+  if getent hosts sliver | awk '{print $1}' | grep -qx "$cand"; then sliver_ip="$cand"; break; fi
+done
+if [ -z "$sliver_ip" ]; then
+  sliver_ip=$(hostname -i | awk '{print $1}')
+  log "WARN: no hostname -i address resolves as 'sliver'; binding $sliver_ip"
+fi
+log "creating HTTP listener on $sliver_ip:80 (website edge)"
+cat > /tmp/boot.rc <<RC
+http --lhost $sliver_ip --lport 80 --website edge
+exit
+RC
+if ! sliver-client console --rc /tmp/boot.rc; then
   log "WARN: console exited non-zero (see output above)"
 fi
+rm -f /tmp/boot.rc
 
-# Post-condition: prove something is actually listening on :80. Without this
-# the container reports healthy while the C2 listener is missing.
+# Post-condition: prove the ROUTABLE address accepts TCP, not just loopback.
+# The old check dialled 127.0.0.1:80 and passed for months while every IPv4
+# SYN from other containers got RST (the 0.0.0.0 -> [::]-only bind above).
 listening=0
 for i in $(seq 1 15); do
-  if (exec 3<>/dev/tcp/127.0.0.1/80) 2>/dev/null; then listening=1; break; fi
+  if (exec 3<>/dev/tcp/$sliver_ip/80) 2>/dev/null; then listening=1; break; fi
   sleep 1
 done
 if [ "$listening" -ne 1 ]; then
-  log "FATAL: nothing is listening on :80 - HTTP C2 is NOT configured."
+  log "FATAL: nothing is listening on $sliver_ip:80 - HTTP C2 is NOT configured."
   log "Check the console output above for a rejected 'http' command."
   exit 1
 fi
-log "HTTP C2 listener confirmed on :80"
+log "HTTP C2 listener confirmed on $sliver_ip:80"
 
 wait "$DAEMON_PID"

