@@ -797,6 +797,51 @@ class HavocClient:
                 "errors": _parse_errors(chunks),
                 "raw_chunks": len(chunks)}
 
+    async def build_payload(self, listener: str = HAVOC_HTTP_LISTENER,
+                            arch: str = "x64", fmt: str = "Windows Exe",
+                            config: dict[str, Any] | None = None,
+                            log: Callable[[str], None] | None = None) -> dict[str, Any]:
+        """Request a Demon build. Returns {filename, size, console:[...]}.
+
+        There is no request correlation id on this path, so the reply is
+        matched by the presence of `PayloadArray` in an Event=5/SubEvent=2
+        frame; console progress frames carry `MessageType` instead.
+        """
+        cfg = config if config is not None else demon_config()
+        request = self._build_frame(listener, arch, fmt, cfg)
+        console: list[str] = []
+        state: dict[str, Any] = {}
+
+        async def on_frame(msg: dict) -> dict[str, Any] | None:
+            head, body = msg.get("Head") or {}, msg.get("Body") or {}
+            info = body.get("Info") or {}
+            if head.get("Event") != EV_GATE or body.get("SubEvent") != 2:
+                return None
+            if "PayloadArray" in info:
+                state["filename"] = info.get("FileName", "payload.bin")
+                state["bytes"] = base64.b64decode(info["PayloadArray"])
+                return state
+            if info.get("MessageType") == "Error":
+                raise BackendError(f"havoc build error: {info.get('Message')}")
+            line = f"{info.get('MessageType', '')}: {info.get('Message', '')}".strip(": ")
+            if line:
+                console.append(line)
+                if log:
+                    log(line)
+            return None
+
+        await self._session(on_frame, request_frame=request,
+                            # A Demon build shells out to the mingw cross-gcc and
+                            # takes 30-90s with no frames in between, so the idle
+                            # window has to outlast the compile. Build failures are
+                            # reported as an explicit Error frame, not a timeout.
+                            idle_timeout=240.0, hard_deadline=900.0)
+        if "bytes" not in state:
+            raise BackendError("havoc: build finished without a PayloadArray "
+                               f"reply. Console: {console[-6:]}")
+        return {"filename": state["filename"], "size": len(state["bytes"]),
+                "payload": state["bytes"], "console": console}
+
 
 # Console messages that are pure protocol chatter, never results. Everything
 # else in Message is kept: short Demon replies (pwd, getuid, net, token)
@@ -864,53 +909,6 @@ def _parse_errors(chunks: list[str]) -> list[str]:
             if isinstance(obj, dict) and str(obj.get("Type", "")).lower() == "error":
                 errors.append(str(obj.get("Message", "")))
     return errors
-
-    async def build_payload(self, listener: str = HAVOC_HTTP_LISTENER,
-                            arch: str = "x64", fmt: str = "Windows Exe",
-                            config: dict[str, Any] | None = None,
-                            log: Callable[[str], None] | None = None) -> dict[str, Any]:
-        """Request a Demon build. Returns {filename, size, console:[...]}.
-
-        There is no request correlation id on this path, so the reply is
-        matched by the presence of `PayloadArray` in an Event=5/SubEvent=2
-        frame; console progress frames carry `MessageType` instead.
-        """
-        cfg = config if config is not None else demon_config()
-        request = self._build_frame(listener, arch, fmt, cfg)
-        console: list[str] = []
-        state: dict[str, Any] = {}
-
-        async def on_frame(msg: dict) -> dict[str, Any] | None:
-            head, body = msg.get("Head") or {}, msg.get("Body") or {}
-            info = body.get("Info") or {}
-            if head.get("Event") != EV_GATE or body.get("SubEvent") != 2:
-                return None
-            if "PayloadArray" in info:
-                state["filename"] = info.get("FileName", "payload.bin")
-                state["bytes"] = base64.b64decode(info["PayloadArray"])
-                return state
-            if info.get("MessageType") == "Error":
-                raise BackendError(f"havoc build error: {info.get('Message')}")
-            line = f"{info.get('MessageType', '')}: {info.get('Message', '')}".strip(": ")
-            if line:
-                console.append(line)
-                if log:
-                    log(line)
-            return None
-
-        await self._session(on_frame, request_frame=request,
-                            # A Demon build shells out to the mingw cross-gcc and
-                            # takes 30-90s with no frames in between, so the idle
-                            # window has to outlast the compile. Build failures are
-                            # reported as an explicit Error frame, not a timeout.
-                            idle_timeout=240.0, hard_deadline=900.0)
-        if "bytes" not in state:
-            raise BackendError("havoc: build finished without a PayloadArray "
-                               f"reply. Console: {console[-6:]}")
-        return {"filename": state["filename"], "size": len(state["bytes"]),
-                "payload": state["bytes"], "console": console}
-
-
 # ------------------------------------------------------------------ sync API
 def _run(coro: Any) -> Any:
     try:
