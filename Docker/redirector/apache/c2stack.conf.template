@@ -4,6 +4,10 @@
     # Logging
     LogLevel warn
     CustomLog ${APACHE_LOG_DIR}/c2stack-access.log combined
+    # Host header per request: proves which callback_domain each implant
+    # request used (domain_rotation / failover evidence) without guessing.
+    LogFormat "%{%Y-%m-%dT%H:%M:%S}t host=%{Host}i \"%r\" %>s %B" c2host
+    CustomLog ${APACHE_LOG_DIR}/c2stack-host.log c2host
     ErrorLog ${APACHE_LOG_DIR}/c2stack-error.log
 
     # ----- Decoy Page (served when no valid C2 header is present) -----

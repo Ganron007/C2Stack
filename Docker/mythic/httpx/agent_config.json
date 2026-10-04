@@ -1,4 +1,70 @@
 {
+  "cadre_base64": {
+    "name": "cadre_base64",
+    "get": {
+      "verb": "GET",
+      "uris": [
+        "/media/uploads/index-cadre_base64"
+      ],
+      "client": {
+        "headers": {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
+        },
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "query",
+          "name": "q"
+        },
+        "transforms": [
+          {
+            "action": "base64url",
+            "value": ""
+          }
+        ]
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Server": "NetDNA-cache/2.2"
+        },
+        "transforms": []
+      }
+    },
+    "post": {
+      "verb": "POST",
+      "uris": [
+        "/media/uploads/data-cadre_base64"
+      ],
+      "client": {
+        "headers": {
+          "Keep-Alive": "true",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
+        },
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "body",
+          "name": ""
+        },
+        "transforms": [
+          {
+            "action": "base64",
+            "value": ""
+          }
+        ]
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Keep-Alive": "true"
+        },
+        "transforms": []
+      }
+    }
+  },
   "cadre_media": {
     "name": "cadre_media",
     "get": {
@@ -50,6 +116,738 @@
           "name": ""
         },
         "transforms": []
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Keep-Alive": "true"
+        },
+        "transforms": []
+      }
+    }
+  },
+  "cadre_netbios": {
+    "name": "cadre_netbios",
+    "get": {
+      "verb": "GET",
+      "uris": [
+        "/media/uploads/index-cadre_netbios"
+      ],
+      "client": {
+        "headers": {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
+        },
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "query",
+          "name": "q"
+        },
+        "transforms": [
+          {
+            "action": "base64url",
+            "value": ""
+          }
+        ]
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Server": "NetDNA-cache/2.2"
+        },
+        "transforms": []
+      }
+    },
+    "post": {
+      "verb": "POST",
+      "uris": [
+        "/media/uploads/data-cadre_netbios"
+      ],
+      "client": {
+        "headers": {
+          "Keep-Alive": "true",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
+        },
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "body",
+          "name": ""
+        },
+        "transforms": [
+          {
+            "action": "netbios",
+            "value": ""
+          }
+        ]
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Keep-Alive": "true"
+        },
+        "transforms": []
+      }
+    }
+  },
+  "cadre_netbiosu": {
+    "name": "cadre_netbiosu",
+    "get": {
+      "verb": "GET",
+      "uris": [
+        "/media/uploads/index-cadre_netbiosu"
+      ],
+      "client": {
+        "headers": {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
+        },
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "query",
+          "name": "q"
+        },
+        "transforms": [
+          {
+            "action": "base64url",
+            "value": ""
+          }
+        ]
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Server": "NetDNA-cache/2.2"
+        },
+        "transforms": []
+      }
+    },
+    "post": {
+      "verb": "POST",
+      "uris": [
+        "/media/uploads/data-cadre_netbiosu"
+      ],
+      "client": {
+        "headers": {
+          "Keep-Alive": "true",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
+        },
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "body",
+          "name": ""
+        },
+        "transforms": [
+          {
+            "action": "netbiosu",
+            "value": ""
+          }
+        ]
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Keep-Alive": "true"
+        },
+        "transforms": []
+      }
+    }
+  },
+  "cadre_prepapp": {
+    "name": "cadre_prepapp",
+    "get": {
+      "verb": "GET",
+      "uris": [
+        "/media/uploads/index-cadre_prepapp"
+      ],
+      "client": {
+        "headers": {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
+        },
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "query",
+          "name": "q"
+        },
+        "transforms": [
+          {
+            "action": "base64url",
+            "value": ""
+          }
+        ]
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Server": "NetDNA-cache/2.2"
+        },
+        "transforms": []
+      }
+    },
+    "post": {
+      "verb": "POST",
+      "uris": [
+        "/media/uploads/data-cadre_prepapp"
+      ],
+      "client": {
+        "headers": {
+          "Keep-Alive": "true",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
+        },
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "body",
+          "name": ""
+        },
+        "transforms": [
+          {
+            "action": "prepend",
+            "value": "CADREPRE"
+          },
+          {
+            "action": "base64url",
+            "value": ""
+          },
+          {
+            "action": "append",
+            "value": "CADREAPP"
+          }
+        ]
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Keep-Alive": "true"
+        },
+        "transforms": []
+      }
+    }
+  },
+  "cadre_rotation": {
+    "name": "cadre_rotation",
+    "get": {
+      "verb": "GET",
+      "uris": [
+        "/media/uploads/index-rotation"
+      ],
+      "client": {
+        "headers": {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
+        },
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "query",
+          "name": "q"
+        },
+        "transforms": [
+          {
+            "action": "base64url",
+            "value": ""
+          }
+        ]
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Server": "NetDNA-cache/2.2"
+        },
+        "transforms": []
+      }
+    },
+    "post": {
+      "verb": "POST",
+      "uris": [
+        "/media/uploads/data-rotation"
+      ],
+      "client": {
+        "headers": {
+          "Keep-Alive": "true",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
+        },
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "body",
+          "name": ""
+        },
+        "transforms": []
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Keep-Alive": "true"
+        },
+        "transforms": []
+      }
+    }
+  },
+  "cadre_xor": {
+    "name": "cadre_xor",
+    "get": {
+      "verb": "GET",
+      "uris": [
+        "/media/uploads/index-cadre_xor"
+      ],
+      "client": {
+        "headers": {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
+        },
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "query",
+          "name": "q"
+        },
+        "transforms": [
+          {
+            "action": "base64url",
+            "value": ""
+          }
+        ]
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Server": "NetDNA-cache/2.2"
+        },
+        "transforms": []
+      }
+    },
+    "post": {
+      "verb": "POST",
+      "uris": [
+        "/media/uploads/data-cadre_xor"
+      ],
+      "client": {
+        "headers": {
+          "Keep-Alive": "true",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
+        },
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "body",
+          "name": ""
+        },
+        "transforms": [
+          {
+            "action": "xor",
+            "value": "cadrekey"
+          }
+        ]
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Keep-Alive": "true"
+        },
+        "transforms": []
+      }
+    }
+  },
+  "netbios": {
+    "name": "netbios",
+    "get": {
+      "verb": "GET",
+      "uris": [
+        "/media/uploads/index-netbios"
+      ],
+      "client": {
+        "headers": {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
+        },
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "query",
+          "name": "q"
+        },
+        "transforms": [
+          {
+            "action": "base64url",
+            "value": ""
+          }
+        ]
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Server": "NetDNA-cache/2.2"
+        },
+        "transforms": []
+      }
+    },
+    "post": {
+      "verb": "POST",
+      "uris": [
+        "/media/uploads/data-netbios"
+      ],
+      "client": {
+        "headers": {
+          "Keep-Alive": "true",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
+        },
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "body",
+          "name": ""
+        },
+        "transforms": [
+          {
+            "action": "netbios",
+            "value": ""
+          }
+        ]
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Keep-Alive": "true"
+        },
+        "transforms": []
+      }
+    }
+  },
+  "netbiosu": {
+    "name": "netbiosu",
+    "get": {
+      "verb": "GET",
+      "uris": [
+        "/media/uploads/index-netbiosu"
+      ],
+      "client": {
+        "headers": {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
+        },
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "query",
+          "name": "q"
+        },
+        "transforms": [
+          {
+            "action": "base64url",
+            "value": ""
+          }
+        ]
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Server": "NetDNA-cache/2.2"
+        },
+        "transforms": []
+      }
+    },
+    "post": {
+      "verb": "POST",
+      "uris": [
+        "/media/uploads/data-netbiosu"
+      ],
+      "client": {
+        "headers": {
+          "Keep-Alive": "true",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
+        },
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "body",
+          "name": ""
+        },
+        "transforms": [
+          {
+            "action": "netbiosu",
+            "value": ""
+          }
+        ]
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Keep-Alive": "true"
+        },
+        "transforms": []
+      }
+    }
+  },
+  "notr": {
+    "name": "notr",
+    "get": {
+      "verb": "GET",
+      "uris": [
+        "/media/uploads/index-notr"
+      ],
+      "client": {
+        "headers": {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
+        },
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "query",
+          "name": "q"
+        },
+        "transforms": [
+          {
+            "action": "base64url",
+            "value": ""
+          }
+        ]
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Server": "NetDNA-cache/2.2"
+        },
+        "transforms": []
+      }
+    },
+    "post": {
+      "verb": "POST",
+      "uris": [
+        "/media/uploads/data-notr"
+      ],
+      "client": {
+        "headers": {
+          "Keep-Alive": "true",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
+        },
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "body",
+          "name": ""
+        },
+        "transforms": []
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Keep-Alive": "true"
+        },
+        "transforms": []
+      }
+    }
+  },
+  "prepapp": {
+    "name": "prepapp",
+    "get": {
+      "verb": "GET",
+      "uris": [
+        "/media/uploads/index-prepapp"
+      ],
+      "client": {
+        "headers": {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
+        },
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "query",
+          "name": "q"
+        },
+        "transforms": [
+          {
+            "action": "base64url",
+            "value": ""
+          }
+        ]
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Server": "NetDNA-cache/2.2"
+        },
+        "transforms": []
+      }
+    },
+    "post": {
+      "verb": "POST",
+      "uris": [
+        "/media/uploads/data-prepapp"
+      ],
+      "client": {
+        "headers": {
+          "Keep-Alive": "true",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
+        },
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "body",
+          "name": ""
+        },
+        "transforms": [
+          {
+            "action": "prepend",
+            "value": "CADREPRE"
+          },
+          {
+            "action": "base64url",
+            "value": ""
+          },
+          {
+            "action": "append",
+            "value": "CADREAPP"
+          }
+        ]
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Keep-Alive": "true"
+        },
+        "transforms": []
+      }
+    }
+  },
+  "tbase64": {
+    "name": "tbase64",
+    "get": {
+      "verb": "GET",
+      "uris": [
+        "/media/uploads/index-tbase64"
+      ],
+      "client": {
+        "headers": {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
+        },
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "query",
+          "name": "q"
+        },
+        "transforms": [
+          {
+            "action": "base64url",
+            "value": ""
+          }
+        ]
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Server": "NetDNA-cache/2.2"
+        },
+        "transforms": []
+      }
+    },
+    "post": {
+      "verb": "POST",
+      "uris": [
+        "/media/uploads/data-tbase64"
+      ],
+      "client": {
+        "headers": {
+          "Keep-Alive": "true",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
+        },
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "body",
+          "name": ""
+        },
+        "transforms": [
+          {
+            "action": "base64",
+            "value": ""
+          }
+        ]
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Keep-Alive": "true"
+        },
+        "transforms": []
+      }
+    }
+  },
+  "xor": {
+    "name": "xor",
+    "get": {
+      "verb": "GET",
+      "uris": [
+        "/media/uploads/index-xor"
+      ],
+      "client": {
+        "headers": {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
+        },
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "query",
+          "name": "q"
+        },
+        "transforms": [
+          {
+            "action": "base64url",
+            "value": ""
+          }
+        ]
+      },
+      "server": {
+        "headers": {
+          "Content-Type": "application/json",
+          "Server": "NetDNA-cache/2.2"
+        },
+        "transforms": []
+      }
+    },
+    "post": {
+      "verb": "POST",
+      "uris": [
+        "/media/uploads/data-xor"
+      ],
+      "client": {
+        "headers": {
+          "Keep-Alive": "true",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "X-Request-ID": "cadre-c2"
+        },
+        "parameters": {},
+        "domain_specific_headers": null,
+        "message": {
+          "location": "body",
+          "name": ""
+        },
+        "transforms": [
+          {
+            "action": "xor",
+            "value": "cadrekey"
+          }
+        ]
       },
       "server": {
         "headers": {
