@@ -172,6 +172,14 @@ SETTINGS: dict[str, dict[str, Any]] = {
 }
 
 _lock = threading.Lock()
+# Values DISCOVERED from the running stack, used only when neither an
+# operator override nor the environment supplies one. This exists because a
+# schema default is a guess, and a guess that overwrites live state is worse
+# than no value at all: the Meridian DNS domain is baked into its state volume
+# on first boot, so rendering the documented default (c2.lab.local) over a
+# lab that actually uses c2.cadre.local would silently re-point the DNS C2
+# channel into a zone nothing answers for.
+_observed: dict[str, str] = {}
 # Plain module attribute, deliberately NOT `global`-declared: the mutation
 # helpers use an explicit `global` statement, and a `global` inside a
 # function makes every bare reference in that function a local name - which
@@ -211,6 +219,18 @@ def reload() -> None:
         _overrides = _load()
 
 
+def _env_is_deliberate(spec: dict[str, Any]) -> bool:
+    """True when the environment carries a value somebody actually chose.
+
+    Compose injects every variable with a `:-default` fallback, so a plain
+    `docker compose up` leaves the portal's environment full of defaults that
+    no operator typed. Treating those as authoritative would make discovery
+    powerless exactly when it matters.
+    """
+    value = os.environ.get(spec["env"])
+    return value not in (None, "") and value != str(spec["default"])
+
+
 def get(key: str, fallback: str | None = None) -> str:
     """Resolved value: override > environment > schema default.
 
@@ -224,12 +244,48 @@ def get(key: str, fallback: str | None = None) -> str:
     with _lock:
         if key in _overrides and _overrides[key] != "":
             return _overrides[key]
+    # An env var only counts as a deliberate choice when it DIFFERS from the
+    # schema default. Compose injects every var with a `:-default` fallback,
+    # so the portal's own environment is full of values nobody chose - and if
+    # those counted, discovery could never correct a setting whose default the
+    # lab does not actually use. That is not hypothetical: MERIDIAN_DNS_DOMAIN
+    # defaults to c2.lab.local while the live volume was seeded with
+    # c2.cadre.local, so rendering would have silently re-pointed the DNS C2
+    # channel into a zone nothing answers for.
     env_value = os.environ.get(spec["env"])
+    if _env_is_deliberate(spec):
+        return str(env_value)
+    with _lock:
+        if key in _observed and _observed[key] != "":
+            return _observed[key]
     if env_value not in (None, ""):
-        return env_value
+        return str(env_value)
     if fallback is not None:
         return fallback
     return str(spec["default"])
+
+
+def observe(key: str, value: str) -> None:
+    """Record what the running stack is actually using.
+
+    Lowest precedence - an operator override or an explicit environment value
+    always wins - so this can never override an intentional choice. It exists
+    so that rendering a config file never overwrites live state with a
+    documented default that the lab does not actually use.
+    """
+    if key not in SETTINGS:
+        return
+    text = (value or "").strip()
+    if not text:
+        return
+    global _observed
+    with _lock:
+        _observed[key] = text
+
+
+def observed() -> dict[str, str]:
+    with _lock:
+        return dict(_observed)
 
 
 def get_int(key: str, fallback: int) -> int:
@@ -298,6 +354,16 @@ def set_overrides(values: dict[str, Any]) -> tuple[dict[str, str], list[str]]:
     return clean, []
 
 
+def forget(key: str) -> None:
+    """Drop a discovered value, e.g. because the operator just cleared the
+    setting and wants env/default back. Without this the next discovery pass
+    would re-learn the stale live value and stamp it straight back in,
+    making 'reset to default' silently do nothing."""
+    global _observed
+    with _lock:
+        _observed.pop(key, None)
+
+
 def clear(key: str) -> None:
     global _overrides
     with _lock:
@@ -313,6 +379,7 @@ def snapshot() -> dict[str, Any]:
     """Schema + resolved values + override provenance, for the UI."""
     with _lock:
         current = dict(_overrides)
+        seen = dict(_observed)
     out: dict[str, Any] = {}
     for key, spec in SETTINGS.items():
         out[key] = {
@@ -323,6 +390,12 @@ def snapshot() -> dict[str, Any]:
             "default": spec["default"],
             "value": get(key),
             "overridden": key in current,
+            # 'stack' means the value was read back off a running container
+            # and beats a mere `:-default` from compose, so the UI shows what
+            # is genuinely in use rather than a default nobody adopted.
+            "source": ("override" if key in current else
+                       "env" if _env_is_deliberate(spec) else
+                       "stack" if key in seen else "default"),
         }
     return out
 

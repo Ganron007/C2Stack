@@ -516,10 +516,27 @@
         </div>
 
         <div class="card config-card">
-          <h3>Docker/.env for stack-scope settings</h3>
-          <p class="pane-sub">Portal-scope values are deliberately absent —
-            the portal stores them itself, so duplicating them here would
-            create two sources of truth.</p>
+          <div class="config-actions" style="margin-top:0;border-top:none;padding-top:0">
+            <button class="btn btn-primary" id="config-apply">⚡ Render config for the stack</button>
+            <button class="btn btn-outline" id="config-show">👁 Show rendered files</button>
+            <span class="hint-inline" id="config-apply-status">Not applied yet.</span>
+          </div>
+          <p class="pane-sub">Writes the real Apache vhost, Meridian listener
+            config and Havoc profile into the shared render volume. Each
+            container prefers these files and falls back to its own
+            environment rendering when they are absent, so a plain
+            <code>docker compose up</code> is unaffected. After rendering,
+            restart the target container(s) for the change to take effect.</p>
+          <pre class="ops-output" id="config-rendered-out" style="display:none"></pre>
+        </div>
+
+        <div class="card config-card">
+          <h3>Docker/.env (optional alternative)</h3>
+          <p class="pane-sub">The render button above is the normal path. Use
+            this if you would rather configure the stack entirely from files —
+            for a reproducible deployment, or when the portal is not running.
+            Portal-scope values are deliberately absent: the portal stores them
+            itself, so duplicating them here would create two sources of truth.</p>
           <pre class="ops-output" id="config-env-out">Loading…</pre>
         </div>
       </section>

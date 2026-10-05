@@ -9,10 +9,30 @@ STATE_DIR="${MERIDIAN_STATE:-/root/.meridian}"
 mkdir -p "${STATE_DIR}"
 
 CONFIG_FILE="${STATE_DIR}/config.json"
+RENDERED="/render/meridian/config.json"
 DNS_DOMAIN="${MERIDIAN_DNS_DOMAIN:-c2.lab.local}"
 
-if [ ! -f "${CONFIG_FILE}" ]; then
-    echo "[meridian] Initializing default listeners config in ${CONFIG_FILE}..."
+# Config precedence:
+#   1. /render/meridian/config.json - written by the portal's Lab Config tab.
+#      Takes precedence even over an existing state file: an operator who
+#      changed the DNS domain in the UI expects the new domain, not whatever
+#      the volume was seeded with on first boot.
+#   2. An existing state file (the volume was already seeded).
+#   3. Seed it from the environment (the plain `docker compose up` path).
+#
+# The domain only matters on a FRESH volume otherwise - which is why changing
+# MERIDIAN_DNS_DOMAIN used to appear to do nothing after the first boot.
+CONFIG_SOURCE="existing state file"
+if [ -f "${RENDERED}" ]; then
+    if python3 -c "import json,sys; json.load(open(sys.argv[1]))" "${RENDERED}" 2>/dev/null; then
+        cp "${RENDERED}" "${CONFIG_FILE}"
+        CONFIG_SOURCE="portal render volume"
+    else
+        echo "[meridian] FATAL: ${RENDERED} is not valid JSON - refusing to use it" >&2
+        exit 1
+    fi
+elif [ ! -f "${CONFIG_FILE}" ]; then
+    CONFIG_SOURCE="environment (seeding new volume)"
     cat <<EOF > "${CONFIG_FILE}"
 {
   "interval": 30,
@@ -38,9 +58,16 @@ if [ ! -f "${CONFIG_FILE}" ]; then
 EOF
 fi
 
+ACTIVE_DOMAINS="$(python3 -c "
+import json
+cfg = json.load(open('${CONFIG_FILE}'))
+print(','.join(sorted({l.get('domain', '?') for l in cfg.get('listeners', [])})))
+" 2>/dev/null || echo '?')"
+
 echo "[meridian] Starting Meridian C2 Daemon..."
+echo "[meridian] config source: ${CONFIG_SOURCE} (domain(s): ${ACTIVE_DOMAINS})"
 echo "[meridian] HTTP C2 listening on 0.0.0.0:8080 (backend for redirector)"
-echo "[meridian] DNS C2 listening on 0.0.0.0:5353/udp (domain: ${DNS_DOMAIN})"
+echo "[meridian] DNS C2 listening on 0.0.0.0:5353/udp"
 echo "[meridian] Precompiled implants available at /opt/meridian/payloads/"
 
 # Start server daemon with python script to keep listeners active.

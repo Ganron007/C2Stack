@@ -35,6 +35,10 @@ volumes:
   adaptix_data:
   meridian_data:
   portal_config:
+  # Config files the portal renders for the sibling containers (Apache vhost,
+  # Meridian listener config, Havoc profile). Portal mounts it read-write as
+  # the only writer; consumers mount it read-only.
+  lab_render:
   mythic_postgres:
 
 services:
@@ -72,6 +76,12 @@ services:
       ADAPTIX_BACKEND_PORT: ${ADAPTIX_BACKEND_PORT:-80}
       MERIDIAN_BACKEND_HOST: ${MERIDIAN_BACKEND_HOST:-meridian}
       MERIDIAN_BACKEND_PORT: ${MERIDIAN_BACKEND_PORT:-8080}
+    volumes:
+      # Rendered Apache vhost from the portal's Lab Config tab. READ-ONLY:
+      # the redirector must not be able to rewrite the policy that gates it.
+      # When absent, the entrypoint renders from the environment above, so a
+      # plain `docker compose up` is unaffected.
+      - lab_render:/render:ro
     ports:
       - "${REDIRECTOR_HTTP_PORT}:80"
     networks:
@@ -124,6 +134,9 @@ services:
       # environment above into the data volume at every start, so neither the
       # committed file nor a stale volume copy can misdirect beacons.
       - ./havoc/havoc.yaotl:/templates/havoc.yaotl:ro
+      # Rendered profile from the portal's Lab Config tab, read-only. Wins
+      # over the repo template + environment when present.
+      - lab_render:/render:ro
     ports:
       - "${HAVOC_TS_PORT}:40056"
     networks:
@@ -321,11 +334,16 @@ services:
       context: ./meridian
     volumes:
       - meridian_data:/root/.meridian
+      # Rendered listener config from the portal's Lab Config tab, read-only.
+      # When present it WINS over the state volume, which fixes the long
+      # standing "changed MERIDIAN_DNS_DOMAIN but nothing happened" trap: the
+      # domain was only ever read when seeding a fresh volume. When absent the
+      # entrypoint falls back to the environment below.
+      - lab_render:/render:ro
     environment:
       MERIDIAN_URI_PREFIX: ${MERIDIAN_URI_PREFIX:-/gateway/v1/telemetry}
-      # Only used when seeding config.json on a FRESH state volume; an existing
-      # meridian_data volume keeps the domain it was created with (see
-      # Doc/Docker.md for the migration note).
+      # Fallback seeding source only - a rendered config from the portal takes
+      # precedence over this AND over an existing state volume.
       MERIDIAN_DNS_DOMAIN: ${MERIDIAN_DNS_DOMAIN:-c2.lab.local}
       # Backend header gate: the HTTP listener itself rejects requests without
       # this header (404), so anything reaching meridian:8080 directly — not
@@ -348,7 +366,12 @@ services:
   # ------------------------------------------------------------------
   portal:
     build:
-      context: ./portal
+      # Build context is Docker/ (not Docker/portal/) because the Lab Config
+      # renderer needs the redirector vhost template and the Havoc profile
+      # template from their sibling directories. dockerfile: pins the path so
+      # the rest of the context is irrelevant to the build.
+      context: .
+      dockerfile: portal/Dockerfile
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       # The docker CLI is installed in the image (see portal/Dockerfile), so
@@ -359,6 +382,12 @@ services:
       # volume so UI edits survive a container recreate - losing an operator's
       # re-pointed C2 IP on `up --build` would be its own outage.
       - portal_config:/data
+      # Rendered configs for the sibling containers (Apache vhost, Meridian
+      # listener config, Havoc profile). The portal is the ONLY writer; the
+      # consumers mount it read-only, so a compromised backend cannot rewrite
+      # the routing policy that gates it.
+      - lab_render:/render
+      # Source templates for the render. Copied in at build time below.
     environment:
       LAB_CONFIG_PATH: /data/lab-config.json
       REDIRECTOR_HOST: redirector

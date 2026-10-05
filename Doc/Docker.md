@@ -152,25 +152,42 @@ C2Stack/Docker/
 
 Every IP, port, prefix and header resolves through
 `Docker/portal/labconfig.py` in the order **UI override → `Docker/.env` →
-documented default**. Nothing is baked into the code.
+discovered live value → documented default**. Nothing is baked into the code.
 
 - **Portal scope** (`victim_redirector_ip`, `victim_ssh_target`) applies
   instantly and covers everything the portal generates: stagers for all five
   frameworks, Havoc/Adaptix listener callback addresses, Mythic `callback_host`,
   and the Sliver generate URL.
 - **Stack scope** (header name/value, prefixes, control ports, DNS domain) is
-  consumed by the *other* containers at boot — Apache routes via
-  `entrypoint.sh` envsubst, Havoc's profile template, Meridian's seeded listener
-  config — so those need the generated `.env` plus a container recreate. The
-  Lab Config tab says which ones and emits the exact lines.
+  written by the portal into a shared `lab_render` volume as the real files
+  the consumers read: the Apache vhost, the Meridian listener config, and the
+  Havoc profile. The flow is **edit → Save → "Render config for the stack" →
+  restart the named containers**. The portal is the only writer (consumers
+  mount the volume read-only); each consumer prefers the rendered file and
+  falls back to its own environment rendering when absent, so a plain
+  `docker compose up` is unaffected.
 
 | Where | What it configures |
 |---|---|
-| Portal → **⚙️ Lab Config** | All 15 settings, live, with validation |
-| `GET /api/config` | Schema + resolved values + provenance |
-| `POST /api/config` | Persist overrides (`values` to set, `clear` to reset) |
-| `GET /api/config/env-file` | `Docker/.env` lines for stack-scope settings |
+| Portal → **⚙️ Lab Config** | All 15 settings, live, with validation + provenance badges |
+| `POST /api/config/apply` | Render the vhost + Meridian config + Havoc profile into `lab_render` |
+| `GET /api/config/rendered` | The actual file contents the consumers will read |
+| `GET /api/config/env-file` | `Docker/.env` lines (optional alternative: file-only setup) |
 | `Docker/.env` | Fallback for both scopes; still works with the UI untouched |
+
+Two subtleties worth knowing:
+
+- **Discovery, not defaults.** Before rendering, the portal reads back what
+  the running containers actually use (Havoc's baked-in profile, Meridian's
+  seeded `config.json`, the active vhost) and treats compose `:-default`
+  values as *not chosen*. Without this, rendering would stamp the documented
+  default over genuine live state — e.g. the Meridian DNS domain is baked
+  into its state volume on first boot, so a lab using `c2.cadre.local` would
+  get silently re-pointed at `c2.lab.local`.
+- **Discovery never adopts the portal's own output.** Live values identical
+  to the last render are skipped, otherwise clearing a setting ("back to
+  default") would re-learn the stale value still present in the
+  not-yet-recreated containers and stamp it straight back in.
 
 Unknown keys, non-numeric ports, prefixes without a leading `/`, and a
 `host:port` in the victim IP are all rejected with a reason — a silently
@@ -297,17 +314,18 @@ the rest are created from the operator consoles:
   headers, so the redirector matches this route on path alone
   (`SLIVER_HEADER_GATE=off`).
 - **Havoc** — automatic: `Docker/havoc/havoc.yaotl` is a **template** bind-mounted
-  read-only at `/templates/havoc.yaotl`; `Docker/havoc/entrypoint.sh` renders every
-  network value in it from the environment (`VICTIM_REDIRECTOR_IP`,
+  read-only at `/templates/havoc.yaotl`. Precedence at start: (1) the portal's
+  rendered profile from the `lab_render` volume, (2) otherwise the entrypoint
+  renders every network value from the environment (`VICTIM_REDIRECTOR_IP`,
   `REDIRECTOR_HTTP_PORT`, `HAVOC_TS_PORT`, `HAVOC_URI_PREFIX`, `C2_HEADER_NAME`,
-  `C2_HEADER_VALUE`) into the `havoc_data` volume at every start, then execs the
-  teamserver. The teamserver runs `./havoc server -d` with no `-profile` flag, so it
-  always reads the volume copy — rendering at start means neither the committed file
-  nor a stale volume copy can silently misdirect beacons (the previous failure mode).
+  `C2_HEADER_VALUE`) into the `havoc_data` volume. The teamserver runs
+  `./havoc server -d` with no `-profile` flag, so it always reads the volume
+  copy — rendering at start means neither the committed file nor a stale volume
+  copy can silently misdirect beacons (the previous failure mode).
   Any placeholder surviving rendering is fatal at boot, not best-effort; note the
   template's own comments must not spell the token syntax literally or the guard
-  would match the documentation itself. Set values in `Docker/.env` (or via the
-  portal's Lab Config tab, which generates those lines). No GUI needed for
+  would match the documentation itself. Configure from the portal's Lab Config
+  tab (Render button) or via `Docker/.env`. No GUI needed for
   operation: `Docker/portal/havoc_client.py` speaks the raw WebSocket protocol
   (SHA3-256 auth, numeric CommandIDs) for builds, sessions, and the full Demon
   command catalogue.

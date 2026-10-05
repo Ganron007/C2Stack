@@ -80,17 +80,20 @@ Nothing is hardcoded to one lab. Open the portal at `http://localhost:8000`
 | **Meridian DNS domain** | The DNS TXT C2 zone. |
 | **Victim SSH target** | `user@host` for the `/api/ops/victim` helper. |
 
-Settings marked **PORTAL** apply immediately. Settings marked **STACK** are read
-by the other containers when they boot, so copy the generated `.env` block into
-`Docker/.env` and recreate them:
+Settings marked **PORTAL** apply immediately. For settings marked **STACK**,
+press **"Render config for the stack"** in the same tab — the portal writes
+the real Apache vhost, Meridian listener config and Havoc profile into a
+shared volume — then restart the named containers:
 
 ```powershell
-docker compose --env-file .env up -d --force-recreate
+cd C2Stack\Docker
+docker compose --env-file .env up -d --force-recreate redirector meridian havoc
 ```
 
 You can also configure everything up front by editing `Docker/.env` directly —
 the portal reads it as its fallback, so the UI is an override, not a
-requirement.
+requirement. And if you would rather run file-only, the tab still emits the
+matching `.env` lines.
 
 ---
 

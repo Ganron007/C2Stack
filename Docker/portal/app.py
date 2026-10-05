@@ -12,6 +12,7 @@ import json
 import os
 import re
 import socket
+import subprocess
 import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1205,6 +1206,7 @@ def get_lab_config() -> dict[str, Any]:
         "settings": labconfig.snapshot(),
         "config_path": labconfig.CONFIG_PATH,
         "env_lines": labconfig.env_lines(),
+        "discovered": labconfig.observed(),
         "notes": {
             "portal_scope": "Applied immediately. Drives stagers, build "
                             "defaults and everything the portal hands to a "
@@ -1216,6 +1218,188 @@ def get_lab_config() -> dict[str, Any]:
                            "containers.",
         },
     }
+
+
+def _havoc_fields(text: str) -> dict[str, str]:
+    """Values baked into a Havoc profile. Shared by discovery (live file) and
+    the portal's own last render, so the two are comparable field by field."""
+    out: dict[str, str] = {}
+    host = re.search(r'Hosts\s*=\s*\[\s*"([^"]+)"', text)
+    if host:
+        out["victim_redirector_ip"] = host.group(1)
+    bind = re.search(r"PortBind\s*=\s*(\d+)", text)
+    if bind:
+        out["redirector_http_port"] = bind.group(1)
+    uri = re.search(r'Uris\s*=\s*\[\s*"([^"]+)"', text)
+    if uri:
+        out["havoc_uri_prefix"] = uri.group(1).rstrip("/")
+    header = re.search(r'"([A-Za-z0-9-]+):\s*([^"]+)"', text)
+    if header and "cadre" not in text.split(header.group(0))[0][-40:]:
+        out["c2_header_name"] = header.group(1)
+        out["c2_header_value"] = header.group(2)
+    return out
+
+
+def _vhost_fields(text: str) -> dict[str, str]:
+    """Route prefixes + header gate from a rendered Apache vhost.
+
+    Positional mapping: the template emits routes in mythic, mythic-httpx,
+    sliver, havoc, adaptix, meridian order, so the REQUEST_URI conds map to
+    settings by position.
+    """
+    out: dict[str, str] = {}
+    conds = re.findall(r"RewriteCond %\{REQUEST_URI\} \^(/[^\s(]+)\(/\|",
+                       text)
+    order = ["mythic_uri_prefix", None, "sliver_uri_prefix",
+             "havoc_uri_prefix", "adaptix_uri_prefix", "meridian_uri_prefix"]
+    for cond, key in zip(conds, order):
+        if key:
+            out[key] = cond
+    gate = re.search(r"RewriteCond %\{HTTP:([A-Za-z0-9-]+)\} \^(.+?)\$ \[NC\]",
+                     text)
+    if gate:
+        out["c2_header_name"] = gate.group(1)
+        out["c2_header_value"] = gate.group(2)
+    return out
+
+
+def _observe_live_stack() -> dict[str, str]:
+    """Learn what the running containers actually use, before rendering.
+
+    Without this the renderer would stamp documented defaults over live state:
+    the Meridian DNS domain lives in its state volume from first boot, so a lab
+    using c2.cadre.local would get silently re-pointed to the default
+    c2.lab.local - a DNS C2 channel answering for nothing. Discovery only
+    fills in values nobody set explicitly, so it can never override intent.
+
+    It also never adopts state the portal itself wrote: live values are
+    compared against the portal's last render, and anything identical is
+    skipped. Otherwise clearing a setting ("back to default") would be
+    defeated - discovery would re-learn the stale live value, still present
+    because the containers have not been recreated yet, and stamp it straight
+    back into the new render.
+    """
+    import lagrender
+
+    def _cat(container: str, path: str) -> str | None:
+        try:
+            done = subprocess.run(
+                ["docker", "exec", container, "cat", path],
+                capture_output=True, timeout=20, check=False)
+            if done.returncode == 0 and done.stdout:
+                return done.stdout.decode("utf-8", "replace")
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            pass
+        return None
+
+    def _rendered(name: str) -> str | None:
+        try:
+            with open(os.path.join(lagrender.RENDER_DIR, name),
+                      "r", encoding="utf-8") as fh:
+                return fh.read()
+        except OSError:
+            return None
+
+    live: dict[str, str] = {}
+    try:
+        live.update(_havoc_fields(
+            _cat("c2stack-havoc-1",
+                 "/opt/havoc/teamserver/data/havoc.yaotl") or ""))
+    except Exception:  # noqa: BLE001 - discovery is best-effort by design
+        pass
+    try:
+        raw = _cat("c2stack-meridian-1", "/root/.meridian/config.json")
+        data = json.loads(raw or "{}")
+        domains = {li.get("domain") for li in data.get("listeners", [])
+                   if li.get("domain")}
+        if len(domains) == 1:
+            live["meridian_dns_domain"] = domains.pop()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        live.update(_vhost_fields(
+            _cat("c2stack-redirector-1",
+                 "/etc/apache2/sites-available/c2stack.conf") or ""))
+    except Exception:  # noqa: BLE001
+        pass
+
+    # What the portal last wrote. Anything live that matches it is our own
+    # output, not external state, and must not be adopted.
+    last: dict[str, str] = {}
+    try:
+        rendered_havoc = _rendered("havoc/havoc.yaotl")
+        if rendered_havoc is not None:
+            last.update(_havoc_fields(rendered_havoc))
+        rendered_meridian = _rendered("meridian/config.json")
+        if rendered_meridian is not None:
+            try:
+                data = json.loads(rendered_meridian)
+                domains = {li.get("domain")
+                           for li in data.get("listeners", [])
+                           if li.get("domain")}
+                if len(domains) == 1:
+                    last["meridian_dns_domain"] = domains.pop()
+            except (ValueError, AttributeError):
+                pass
+        rendered_vhost = _rendered("redirector/c2stack.conf")
+        if rendered_vhost is not None:
+            last.update(_vhost_fields(rendered_vhost))
+    except Exception:  # noqa: BLE001
+        pass
+
+    found = {k: v for k, v in live.items() if last.get(k) != v}
+    for key, value in found.items():
+        labconfig.observe(key, value)
+    return found
+
+
+@app.post("/api/config/apply")
+def apply_lab_config() -> dict[str, Any]:
+    """Render the sibling containers' config files from the current settings.
+
+    This is what makes stack-scope settings a one-click operation instead of
+    "edit .env by hand and recreate". The portal writes real files into the
+    shared render volume; each consumer entrypoint prefers them and falls back
+    to its own environment rendering when they are absent.
+
+    Rendering is NOT applying: the target containers must still restart to
+    re-read their config, and that is reported per target rather than done
+    silently (restarting a live C2 backend under an operator mid-operation is
+    not a side effect a settings form should trigger without being explicit).
+    """
+    import lagrender
+    discovered = _observe_live_stack()
+    try:
+        result = lagrender.render_all()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500,
+                            detail=f"render failed: {exc}") from exc
+    result["discovered_from_stack"] = discovered
+    result["restart_required"] = [
+        w["target"] for w in result.get("written", [])]
+    return result
+
+
+@app.get("/api/config/rendered")
+def get_rendered_configs() -> dict[str, Any]:
+    """What the portal has actually written for the other containers.
+
+    Useful when a route misbehaves: this shows the file the consumer will read
+    rather than the setting that was intended.
+    """
+    import lagrender
+    out: dict[str, Any] = {}
+    for name, path in (("redirector", lagrender.REDIRECTOR_CONF),
+                       ("meridian", lagrender.MERIDIAN_CONFIG),
+                       ("havoc", lagrender.HAVOC_PROFILE)):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                out[name] = {"path": path, "content": fh.read()}
+        except OSError:
+            out[name] = {"path": path, "content": None,
+                         "note": "not rendered yet - the container is using "
+                                 "its own environment rendering"}
+    return {"ok": True, "rendered": out}
 
 
 @app.post("/api/config")
@@ -1231,6 +1415,11 @@ def update_lab_config(req: LabConfigUpdate) -> dict[str, Any]:
             raise HTTPException(status_code=400,
                                 detail=f"unknown setting '{key}'")
         labconfig.clear(key)
+        # Forget any discovered live value too: otherwise the next render's
+        # discovery pass would re-learn the stale value still present in the
+        # not-yet-recreated containers and stamp it straight back in, making
+        # "reset to default" silently do nothing.
+        labconfig.forget(key)
     applied, errors = labconfig.set_overrides(req.values or {})
     if errors:
         raise HTTPException(status_code=400, detail="; ".join(errors))

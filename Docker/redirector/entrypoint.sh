@@ -1,20 +1,24 @@
 #!/usr/bin/env bash
 # C2Stack redirector entrypoint.
-# Renders the Apache vhost from environment variables, then runs Apache in
-# the foreground. Only the C2Stack variables are substituted (envsubst with an
-# explicit list) so Apache's own ${APACHE_LOG_DIR} is left untouched.
+#
+# Config precedence:
+#   1. /render/redirector/c2stack.conf - written by the portal's Lab Config
+#      tab (render_all() in lagrender.py). Single writer, so the UI is the
+#      source of truth once someone uses it.
+#   2. Environment rendering below - the default path, so a plain
+#      `docker compose up` with no portal involvement works unchanged.
+#
+# The rendered file is used as-is (the portal already substituted everything
+# and refused to write a config with an unsubstituted reference). We still
+# verify, because a stale file from an older portal could reintroduce the
+# silent-fallthrough-to-decoy failure this guard exists to prevent.
 set -euo pipefail
 
 TEMPLATE="/etc/apache2/sites-available/c2stack.conf.template"
 CONF="/etc/apache2/sites-available/c2stack.conf"
+RENDERED="/render/redirector/c2stack.conf"
 
-# NOTE: every variable referenced in the template MUST be listed here. A
-# missing entry is left as the literal text "${VAR}" in the rendered config -
-# apache2ctl configtest still passes, so the route silently never matches and
-# every request falls through to the decoy page. That is exactly how the httpx
-# route (MYTHIC_HTTPX_*) went missing: it was added to the template but never
-# added here.
-# Per-route header gate. Sliver's implant never sends C2_HEADER_NAME, so its
+# Per-route header gate. Sliver's HTTP implant sends no custom headers, so its
 # route must match on path alone; every other route keeps the header check.
 # NOTE: this MUST be set before the envsubst call below - envsubst expands
 # ${SLIVER_HEADER_GATE} from the environment at that moment.
@@ -29,14 +33,31 @@ else
 fi
 export SLIVER_HEADER_GATE
 
+# NOTE: every variable referenced in the template MUST be listed here. A
+# missing entry is left as the literal text "${VAR}" in the rendered config -
+# apache2ctl configtest still passes, so the route silently never matches and
+# every request falls through to the decoy page. That is exactly how the httpx
+# route (MYTHIC_HTTPX_*) went missing: it was added to the template but never
+# added here.
 VARS='${C2_HEADER_NAME} ${C2_HEADER_VALUE} ${MYTHIC_URI_PREFIX} ${MYTHIC_HTTPX_URI_PREFIX} ${SLIVER_URI_PREFIX} ${HAVOC_URI_PREFIX} ${ADAPTIX_URI_PREFIX} ${MERIDIAN_URI_PREFIX} ${MYTHIC_BACKEND_HOST} ${MYTHIC_BACKEND_PORT} ${MYTHIC_HTTPX_BACKEND_HOST} ${MYTHIC_HTTPX_BACKEND_PORT} ${SLIVER_BACKEND_HOST} ${SLIVER_BACKEND_PORT} ${HAVOC_BACKEND_HOST} ${HAVOC_BACKEND_PORT} ${ADAPTIX_BACKEND_HOST} ${ADAPTIX_BACKEND_PORT} ${MERIDIAN_BACKEND_HOST} ${MERIDIAN_BACKEND_PORT} ${SLIVER_HEADER_GATE}'
 
-envsubst "${VARS}" < "${TEMPLATE}" > "${CONF}"
+# APACHE_LOG_DIR is Apache's own variable, expanded at runtime, so it is
+# expected to remain in the rendered config.
+unsubstituted_check() {
+  grep -oE '\$\{[A-Z_]+\}' "$1" | sort -u | grep -v '^\${APACHE_LOG_DIR}$' || true
+}
+
+CONFIG_SOURCE="environment"
+if [ -f "${RENDERED}" ]; then
+  cp "${RENDERED}" "${CONF}"
+  CONFIG_SOURCE="portal render volume"
+else
+  envsubst "${VARS}" < "${TEMPLATE}" > "${CONF}"
+fi
 
 # Fail loudly if any C2Stack ${VAR} survived substitution: an unsubstituted
-# reference means a route that can never match. APACHE_LOG_DIR is deliberately
-# excluded - Apache itself expands it at runtime, so it is expected to remain.
-UNSUBSTITUTED="$(grep -oE '\$\{[A-Z_]+\}' "${CONF}" | sort -u | grep -v '^\${APACHE_LOG_DIR}$' || true)"
+# reference means a route that can never match.
+UNSUBSTITUTED="$(unsubstituted_check "${CONF}")"
 if [ -n "${UNSUBSTITUTED}" ]; then
   echo "[redirector] FATAL: unsubstituted variables remain in ${CONF}:" >&2
   echo "${UNSUBSTITUTED}" >&2
@@ -57,7 +78,26 @@ ServerSignature Off
 EOF
 apache2ctl configtest
 
-echo "[redirector] C2 header: ${C2_HEADER_NAME}: ${C2_HEADER_VALUE}"
-echo "[redirector] routes: mythic=${MYTHIC_URI_PREFIX} -> ${MYTHIC_BACKEND_HOST}:${MYTHIC_BACKEND_PORT}, mythic-httpx=${MYTHIC_HTTPX_URI_PREFIX} -> ${MYTHIC_HTTPX_BACKEND_HOST}:${MYTHIC_HTTPX_BACKEND_PORT}, sliver=${SLIVER_URI_PREFIX} -> ${SLIVER_BACKEND_HOST}:${SLIVER_BACKEND_PORT}, havoc=${HAVOC_URI_PREFIX} -> ${HAVOC_BACKEND_HOST}:${HAVOC_BACKEND_PORT}, adaptix=${ADAPTIX_URI_PREFIX} -> ${ADAPTIX_BACKEND_HOST}:${ADAPTIX_BACKEND_PORT}, meridian=${MERIDIAN_URI_PREFIX} -> ${MERIDIAN_BACKEND_HOST}:${MERIDIAN_BACKEND_PORT}"
+# Report the routes as they exist in the ACTIVE config, not from the
+# environment. When the portal rendered this file the environment is stale by
+# definition, and a log line describing a different config than the one
+# serving traffic is worse than no log line at all.
+# Every pipeline below ends in `|| true`: under `set -o pipefail` a grep that
+# matches nothing exits 1, and without the guard that would kill the
+# entrypoint AFTER a good configtest - a healthy-looking config that never
+# serves traffic.
+echo "[redirector] config source: ${CONFIG_SOURCE}"
+echo "[redirector] active routes:"
+grep -oE 'RewriteCond %\{REQUEST_URI\} \^[^ ]+' "${CONF}" \
+  | sed 's/RewriteCond %{REQUEST_URI} \^/  /' \
+  | sort -u | while read -r prefix; do
+      echo "[redirector]   ${prefix}"
+    done || true
+grep -oE 'http://[a-z_]+:[0-9]+' "${CONF}" | sort -u | \
+  while read -r target; do echo "[redirector]   -> ${target}"; done || true
+gate_line="$(grep -oE 'RewriteCond %\{HTTP:[A-Za-z-]+\} [^ ]+ \[NC\]' "${CONF}" | head -1 || true)"
+if [ -n "${gate_line}" ]; then
+  echo "[redirector]   header gate: ${gate_line}"
+fi
 
 exec apache2ctl -D FOREGROUND

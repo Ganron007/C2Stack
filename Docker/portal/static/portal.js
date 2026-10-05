@@ -1053,7 +1053,73 @@ async function initLabConfig() {
   document.getElementById('config-env').addEventListener('click', () => {
     window.location.href = '/api/config/env-file';
   });
+  document.getElementById('config-apply').addEventListener('click', cfgApply);
+  document.getElementById('config-show').addEventListener('click', cfgShowRendered);
   cfgLoad();
+}
+
+// Render the sibling containers' config files, then offer the restart.
+// Rendering is separated from restarting on purpose: bouncing a live C2
+// backend is not something a settings form should do unasked, so the button
+// renders and then names the containers the operator still has to restart.
+async function cfgApply() {
+  const btn = document.getElementById('config-apply');
+  const status = document.getElementById('config-apply-status');
+  btn.disabled = true;
+  status.textContent = 'rendering…';
+  try {
+    const res = await fetch('/api/config/apply', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) {
+      status.textContent = 'Render failed: ' + (data.detail || res.statusText);
+      status.className = 'hint-inline err';
+      return;
+    }
+    if (!data.ok) {
+      status.textContent = 'Rendered with errors: ' +
+        (data.errors || []).join('; ');
+      status.className = 'hint-inline err';
+    } else {
+      const written = (data.written || []).map(w =>
+        w.target + ' (' + w.bytes + ' B)').join(', ');
+      const learned = Object.keys(data.discovered_from_stack || {});
+      status.textContent = 'Rendered ' + written +
+        '. Restart to apply: ' + (data.restart_required || []).join(', ') +
+        (learned.length
+          ? ' · read live values from: ' + learned.join(', ')
+          : '');
+      status.className = 'hint-inline warn';
+    }
+    // The render may have adopted live values, so re-read rather than reuse
+    // the pre-render snapshot.
+    await cfgLoad();
+    cfgShowRendered();
+  } catch (err) {
+    status.textContent = 'Render request failed: ' + err.message;
+    status.className = 'hint-inline err';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function cfgShowRendered() {
+  const out = document.getElementById('config-rendered-out');
+  try {
+    const res = await fetch('/api/config/rendered');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    let text = '';
+    for (const [name, info] of Object.entries(data.rendered || {})) {
+      text += '===== ' + name + ' (' + info.path + ') =====\n';
+      text += info.content ? info.content + '\n' : '(not rendered — ' +
+        (info.note || 'absent') + ')\n\n';
+    }
+    out.style.display = '';
+    out.textContent = text || '(nothing rendered yet)';
+  } catch (err) {
+    out.style.display = '';
+    out.textContent = 'Could not read rendered configs: ' + err.message;
+  }
 }
 
 async function cfgLoad() {
@@ -1093,15 +1159,23 @@ function cfgRender() {
     const row = document.createElement('div');
     row.className = 'config-row';
     const stack = s.scope === 'stack';
+    // Provenance matters: "stack" means the value was read back off a running
+    // container, so the UI is showing what is genuinely live rather than a
+    // documented default the lab never adopted.
+    const src = s.source || 'default';
+    const srcLabel = { override: 'OVERRIDDEN', env: 'ENV', stack: 'FROM STACK',
+                       default: 'DEFAULT' }[src] || src.toUpperCase();
     row.innerHTML =
       '<div class="config-label">' +
         '<strong>' + s.label + '</strong> ' +
         '<span class="status-badge ' + (stack ? 'stopped' : 'running') + '" ' +
         'title="' + (stack
-          ? 'Read by the other containers at boot. Change here, then copy the .env below and recreate them.'
+          ? 'Read by the other containers at boot. Change here, then press "Render config for the stack" and restart them.'
           : 'Applied immediately by the portal.') + '">' +
           (stack ? 'STACK' : 'PORTAL') + '</span>' +
-        (s.overridden ? ' <span class="status-badge running">OVERRIDDEN</span>' : '') +
+        ' <span class="status-badge ' +
+          (src === 'override' ? 'running' : 'stopped') + '">' +
+          srcLabel + '</span>' +
         '<small class="config-help">' + s.help + '</small>' +
         '<small class="config-env">env: ' + s.env + '</small>' +
       '</div>' +
@@ -1167,9 +1241,12 @@ async function cfgSave() {
         l.trim() && !l.startsWith('#')).join('\n') ||
       '(no stack-scope settings)';
     if (restart.length) {
-      cfgStatus('Saved ' + n + ' setting(s). Stack-scope change detected (' +
-        restart.join(', ') + '): copy the .env above into Docker/.env and ' +
-        'recreate the containers.', 'warn');
+      // Point at the render button: that is now the actual next step, so
+      // telling the operator to hand-edit .env would send them down a path
+      // that is no longer necessary.
+      cfgStatus('Saved ' + n + ' setting(s). Stack-scope (' + restart.join(', ') +
+        '): press "Render config for the stack" below, then restart those ' +
+        'containers.', 'warn');
     } else {
       cfgStatus('Saved ' + n + ' setting(s) — applied immediately.', '');
     }

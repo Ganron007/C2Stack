@@ -1,0 +1,19 @@
+# Build context for the PORTAL image is Docker/ (see docker-compose.yml:
+# `context: .` + `dockerfile: portal/Dockerfile`), because the Lab Config
+# renderer needs the redirector vhost template and the Havoc profile template
+# from their sibling directories.
+#
+# This keeps that wider context cheap: without it, the whole Docker/ tree -
+# including the vendored Havoc/Adaptix/Sliver/Meridian source trees, state
+# volumes and .env - would be shipped to the daemon on every portal rebuild.
+*
+# The portal needs only its own sources plus the two config templates.
+!portal/
+# The parent directories MUST be re-included as well: Docker walks the tree
+# top-down and will not descend into a directory that is still excluded, so
+# un-ignoring the file alone silently leaves it out of the context.
+!redirector/
+!redirector/apache/
+!redirector/apache/c2stack.conf.template
+!havoc/
+!havoc/havoc.yaotl

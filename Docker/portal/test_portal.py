@@ -2,9 +2,22 @@
 
 import pytest
 from fastapi.testclient import TestClient
-from app import app
+
+import labconfig
+import lagrender
+from app import _havoc_fields, _vhost_fields, app
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_labconfig(monkeypatch, tmp_path):
+    """Config API tests must not touch the real store."""
+    monkeypatch.setattr(labconfig, "CONFIG_PATH",
+                        str(tmp_path / "lab-config.json"))
+    monkeypatch.setattr(labconfig, "_overrides", {})
+    monkeypatch.setattr(labconfig, "_observed", {})
+    yield
 
 
 def test_index_html_serving():
@@ -128,3 +141,107 @@ def test_fleet_sessions():
     data = response.json()
     assert "sessions" in data
     assert len(data["sessions"]) >= 1
+VHOST_SAMPLE = """<VirtualHost *:80>
+    RewriteCond %{REQUEST_URI} ^/cdn/media/stream(/|$)
+    RewriteCond %{HTTP:X-Lab} ^tok-1$ [NC]
+    RewriteRule ^(.*)$ http://mythic_http:80$1 [P,L]
+    RewriteCond %{REQUEST_URI} ^/media/uploads(/|$)
+    RewriteRule ^(.*)$ http://mythic_httpx:82$1 [P,L]
+    RewriteCond %{REQUEST_URI} ^/s-prefix(/|$)
+    RewriteCond %{REQUEST_URI} ^/
+    RewriteRule ^(.*)$ http://sliver:80$1 [P,L]
+    RewriteCond %{REQUEST_URI} ^/h-prefix(/|$)
+    RewriteCond %{HTTP:X-Lab} ^tok-1$ [NC]
+    RewriteRule ^(.*)$ http://havoc:80$1 [P,L]
+    RewriteCond %{REQUEST_URI} ^/a-prefix(/|$)
+    RewriteRule ^(.*)$ http://adaptix:80$1 [P,L]
+    RewriteCond %{REQUEST_URI} ^/m-prefix(/|$)
+    RewriteRule ^(.*)$ http://meridian:8080$1 [P,L]
+</VirtualHost>
+"""
+
+HAVOC_SAMPLE = """Teamserver {
+    Host = "0.0.0.0"
+    Port = 40056
+}
+Listeners {
+    Http {
+        Hosts = [ "10.9.8.7" ]
+        PortBind = 80
+        PortConn = 80
+        Uris = [ "/probe/path/" ]
+        Headers = [ "X-Lab: tok-1" ]
+    }
+}
+"""
+
+
+def test_havoc_fields_parse():
+    fields = _havoc_fields(HAVOC_SAMPLE)
+    assert fields == {
+        "victim_redirector_ip": "10.9.8.7",
+        "redirector_http_port": "80",
+        "havoc_uri_prefix": "/probe/path",
+        "c2_header_name": "X-Lab",
+        "c2_header_value": "tok-1",
+    }
+
+
+def test_vhost_fields_parse_positionally():
+    fields = _vhost_fields(VHOST_SAMPLE)
+    assert fields["mythic_uri_prefix"] == "/cdn/media/stream"
+    assert fields["sliver_uri_prefix"] == "/s-prefix"
+    assert fields["havoc_uri_prefix"] == "/h-prefix"
+    assert fields["adaptix_uri_prefix"] == "/a-prefix"
+    assert fields["meridian_uri_prefix"] == "/m-prefix"
+    assert fields["c2_header_name"] == "X-Lab"
+    assert fields["c2_header_value"] == "tok-1"
+
+
+def test_config_get_schema():
+    r = client.get("/api/config")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["ok"] is True
+    for key in ("victim_redirector_ip", "havoc_uri_prefix",
+                "c2_header_value", "meridian_dns_domain"):
+        assert key in data["settings"]
+        assert "source" in data["settings"][key]
+
+
+def test_config_rejects_unknown_and_bad_values():
+    r = client.post("/api/config", json={"values": {"bogus": "x"}})
+    assert r.status_code == 400
+    r = client.post("/api/config", json={"values": {"havoc_ts_port": "abc"}})
+    assert r.status_code == 400
+    r = client.post("/api/config",
+                    json={"values": {"victim_redirector_ip": "1.2.3.4:80"}})
+    assert r.status_code == 400
+
+
+def test_config_roundtrip_and_clear():
+    r = client.post("/api/config",
+                    json={"values": {"c2_header_value": "roundtrip-1"}})
+    assert r.status_code == 200
+    assert client.get("/api/config").json(
+    )["settings"]["c2_header_value"]["value"] == "roundtrip-1"
+    r = client.post("/api/config",
+                    json={"values": {}, "clear": ["c2_header_value"]})
+    assert r.status_code == 200
+    assert "c2_header_value" in r.json()["cleared"]
+    # Clearing also forgets discovery: the value must fall back, not stick.
+    assert client.get("/api/config").json(
+    )["settings"]["c2_header_value"]["source"] in ("default", "env")
+
+
+def test_config_env_file_excludes_portal_scope():
+    r = client.get("/api/config/env-file")
+    assert r.status_code == 200
+    assert "HAVOC_TS_PORT=" in r.text
+    assert "VICTIM_REDIRECTOR_IP=" not in r.text
+
+
+def test_rendered_endpoint_reports_missing_gracefully():
+    r = client.get("/api/config/rendered")
+    assert r.status_code == 200
+    assert set(r.json()["rendered"]) == {"redirector", "meridian", "havoc"}
