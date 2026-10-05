@@ -1,0 +1,9 @@
+# Shell entrypoints MUST stay LF: a CRLF shebang line makes the container
+# fail with `env: 'bash\r': No such file or directory` (restart loop). That
+# exact failure happened to Docker/meridian/entrypoint.sh after a Windows
+# edit, so this is load-bearing, not cosmetic.
+Docker/**/entrypoint.sh text eol=lf
+Docker/**/bootstrap.sh text eol=lf
+Docker/*.sh text eol=lf
+Docker/**/*.sh text eol=lf
+*.ps1 text eol=crlf
