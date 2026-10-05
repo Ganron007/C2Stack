@@ -75,12 +75,12 @@ Runtime semantics are unchanged: the agent's `Program.cs` splits
 string must hold single backslashes — doubling them here only survives the
 compiler.
 
-## Verified live (2026-10-04, ws01)
+## Verified live (2026-10-04, lab target)
 
 - Registry-keyed build (path
   `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProductName`, value
   `Windows 10 Enterprise`, Matches) now **builds** (`build_phase=success`; the
   unpatched builder errors with CS1009 on the same input) and the agent
-  **callbacks** on ws01 and tasks end-to-end.
+  **callbacks** on the lab target and tasks end-to-end.
 - Negative (value `WRONGVALUE`, Matches): agent exits silently, zero
   callbacks — hash-compare path proven both ways.

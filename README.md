@@ -30,7 +30,7 @@ C2Stack runs a header-aware **Apache redirector** in front of five C2 frameworks
 
 ### Traffic Flow & OPSEC Boundaries
 
-1. **Callback Initiation**: A payload on a victim calls back to `http://<host-ip-on-vmnet2>:<REDIRECTOR_HTTP_PORT>/<prefix>` with header `X-Request-ID: cadre-c2`, or sends UDP DNS TXT queries to `<host-ip-on-vmnet2>:<MERIDIAN_DNS_PORT>` (default `15353`, mapped to the container's `5353/udp` — Windows mDNS occupies 5353 on the host).
+1. **Callback Initiation**: A payload on a victim calls back to `http://<redirector-host>:<REDIRECTOR_HTTP_PORT>/<prefix>` with header `X-Request-ID: cadre-c2`, or sends UDP DNS TXT queries to `<redirector-host>:<MERIDIAN_DNS_PORT>` (default `15353`, mapped to the container's `5353/udp` — Windows mDNS occupies 5353 on the host).
 2. **Header Inspection**: The Apache redirector validates the header:
    - **Valid Header**: Proxies to the matching C2 container on the isolated `c2_core` network based on the URI prefix.
    - **Missing / Invalid Header**: Serves a benign **CloudEdge CDN Decoy Page** (shielding the teamservers from scanners and incident responders).
@@ -44,7 +44,7 @@ C2Stack runs a header-aware **Apache redirector** in front of five C2 frameworks
 Prerequisites:
 - Docker Desktop running on the host (Windows / Linux / macOS).
 - A Kali VM as the operator workstation (or host shell).
-- Host reachable from the CADRE lab network (vmnet2, `192.168.77.0/24`).
+- Host reachable from your lab network.
 
 ```powershell
 # Windows (Docker Desktop)

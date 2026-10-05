@@ -107,29 +107,29 @@ Write-Host "`n[bootstrap] Stack status:" -ForegroundColor Cyan
 $summary = @"
 
 [bootstrap] Next steps for the operator:
-  - C2Stack Flight Control UI    : http://localhost:$portalPort (or http://<host-ip-on-vmnet2>:$portalPort)
-  - Redirector callback endpoint : http://<host-ip-on-vmnet2>:$redirectorPort
-  - Mythic UI (if enabled)       : https://<host-ip-on-vmnet2>:$mythicPort
+  - C2Stack Flight Control UI    : http://localhost:$portalPort (or http://<redirector-host>:$portalPort)
+  - Redirector callback endpoint : http://<redirector-host>:$redirectorPort
+  - Mythic UI (if enabled)       : https://<redirector-host>:$mythicPort
   - Sliver operator port         : $sliverPort
   - Havoc teamserver port        : $havocPort
   - Adaptix teamserver port      : $adaptixPort  (Qt GUI client)
-  - Meridian DNS Listener        : <host-ip-on-vmnet2>:$meridianDns/udp (DNS Covert Channel)
-  - Meridian HTTP Callback       : http://<host-ip-on-vmnet2>:$redirectorPort$meridianPrefix
+  - Meridian DNS Listener        : <redirector-host>:$meridianDns/udp (DNS Covert Channel)
+  - Meridian HTTP Callback       : http://<redirector-host>:$redirectorPort$meridianPrefix
 
   Verify the redirector decoy page (no header -> CloudEdge CDN):
-    curl http://<host-ip-on-vmnet2>:$redirectorPort/
+    curl http://<redirector-host>:$redirectorPort/
 
   Verify C2 routing (with header -> backend). Meridian is always enabled, so
   probe it (was hardcoded, ignoring MERIDIAN_URI_PREFIX):
     curl -H "${c2HeaderName}: $c2HeaderVal" `
-      http://<host-ip-on-vmnet2>:$redirectorPort$meridianPrefix/
+      http://<redirector-host>:$redirectorPort$meridianPrefix/
 
   Adaptix operator connection (Qt GUI client on Kali):
-    Configure endpoint to <host-ip-on-vmnet2>:$adaptixPort
+    Configure endpoint to <redirector-host>:$adaptixPort
 
   Meridian console / payload execution (on target):
     Linux:   ./parallax-linux-amd64
-    Windows: parallax-windows-amd64.exe (DNS: c2.cadre.local or HTTP via redirector)
+    Windows: parallax-windows-amd64.exe (DNS: c2.lab.local or HTTP via redirector)
 "@
 Write-Host $summary -ForegroundColor White
 

@@ -92,7 +92,7 @@ def test_dns_dissector():
     payload = {
         "payload_text": "whoami /priv && net user",
         "session_id": "B8E101",
-        "domain_suffix": "c2.cadre.local",
+        "domain_suffix": "c2.lab.local",
     }
     response = client.post("/api/dns/dissect", json=payload)
     assert response.status_code == 200
@@ -104,7 +104,7 @@ def test_dns_dissector():
     for pkt in data["packets"]:
         assert pkt["label_safe"] is True
         assert pkt["chunk_len"] <= 36
-        assert pkt["generated_query"].endswith(".c2.cadre.local")
+        assert pkt["generated_query"].endswith(".c2.lab.local")
         assert "b8e101" in pkt["generated_query"].lower()
 
 

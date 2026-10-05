@@ -9,7 +9,7 @@ STATE_DIR="${MERIDIAN_STATE:-/root/.meridian}"
 mkdir -p "${STATE_DIR}"
 
 CONFIG_FILE="${STATE_DIR}/config.json"
-DNS_DOMAIN="${MERIDIAN_DNS_DOMAIN:-c2.cadre.local}"
+DNS_DOMAIN="${MERIDIAN_DNS_DOMAIN:-c2.lab.local}"
 
 if [ ! -f "${CONFIG_FILE}" ]; then
     echo "[meridian] Initializing default listeners config in ${CONFIG_FILE}..."

@@ -250,7 +250,7 @@ function initDnsDissector() {
         body: JSON.stringify({
           payload_text: payloadInput.value.trim() || 'whoami /priv',
           session_id: sessionInput.value.trim() || 'A3F99B',
-          domain_suffix: domainInput.value.trim() || 'c2.cadre.local',
+          domain_suffix: domainInput.value.trim() || 'c2.lab.local',
         })
       });
       const data = await res.json();
@@ -416,20 +416,20 @@ async function initFleetRadar() {
 // Havoc's dispatcher produces an "unknown command" error, so the presets are
 // built from what each framework actually accepts.
 const OPS_PRESETS = {
-  meridian: ['whoami', 'ipconfig /all', 'net user', 'whoami > C:\\Users\\vagrant\\out.txt'],
-  mythic:   ['whoami', 'ipconfig /all', 'net user', 'whoami > C:\\Users\\vagrant\\out.txt'],
+  meridian: ['whoami', 'ipconfig /all', 'net user', 'whoami > C:\\Users\\operator\\out.txt'],
+  mythic:   ['whoami', 'ipconfig /all', 'net user', 'whoami > C:\\Users\\operator\\out.txt'],
   havoc:    ['whoami', 'shell whoami', 'powershell Get-Process', 'ls C:\\',
              'ps', 'cat C:\\Windows\\System32\\drivers\\etc\\hosts',
              'sleep 10', 'token list', 'net domain', 'config Sleep',
-             'whoami > C:\\Users\\vagrant\\out.txt'],
-  adaptix:  ['getuid', 'ls C:\\Users\\vagrant', 'ps list',
+             'whoami > C:\\Users\\operator\\out.txt'],
+  adaptix:  ['getuid', 'ls C:\\Users\\operator', 'ps list',
              'shell whoami', 'powershell whoami /priv',
-             'shell whoami > C:\\Users\\vagrant\\out.txt'],
+             'shell whoami > C:\\Users\\operator\\out.txt'],
   // Sliver `execute` runs the binary directly with no shell: no `>`, `|`,
   // `&&`. `whoami /priv` passes /priv as an argument (harmless); shell
   // features need an explicit wrapper, hence the cmd.exe preset.
   sliver:   ['whoami', 'hostname', 'ipconfig',
-             'cmd.exe "/c whoami > C:\\Users\\vagrant\\out.txt"'],
+             'cmd.exe "/c whoami > C:\\Users\\operator\\out.txt"'],
 };
 
 let opsSessions = [];
@@ -703,7 +703,7 @@ async function opsRunBuild() {
 
   // Victim-facing redirector IP for implant callback URLs (env-driven;
   // falls back to the lab default if /api/status is unreachable).
-  let victimIp = '192.168.77.1';
+  let victimIp = '192.168.100.1';
   try {
     const st = await fetch('/api/status');
     if (st.ok) {
@@ -780,7 +780,7 @@ async function opsRunMythicBuild(out, btn) {
     const parts = keying.split(':');
     if (parts.length !== 2 || !parts[0] || !parts[1]) {
       out.className = 'ops-output build-out err';
-      out.textContent = 'Keying must look like Hostname:WS01 or Domain:CHILD.';
+      out.textContent = 'Keying must look like Hostname:WIN-TARGET or Domain:LAB.';
       btn.disabled = false;
       return;
     }

@@ -122,13 +122,13 @@
     <circle cx="28" cy="28" r="16" fill="#b45309"/>
     <text x="28" y="34" text-anchor="middle" font-family="sans-serif" font-size="16" font-weight="900" fill="#ffffff">1</text>
     
-    <text x="56" y="34" font-family="sans-serif" font-size="18.5" font-weight="900" fill="#ffffff">CADRE LAB TARGET RANGE (192.168.77.0/24)</text>
+    <text x="56" y="34" font-family="sans-serif" font-size="18.5" font-weight="900" fill="#ffffff">LAB TARGET RANGE (192.168.100.0/24)</text>
     <rect x="635" y="14" width="130" height="28" rx="6" fill="#451a03" stroke="#f59e0b" stroke-width="1.2"/>
     <text x="700" y="32" text-anchor="middle" font-family="sans-serif" font-size="12" font-weight="800" fill="#fde68a">VICTIMS</text>
 
     <!-- Sub-bullets -->
     <g transform="translate(24, 60)">
-      <text x="0" y="16" font-family="sans-serif" font-size="14.5" font-weight="600" fill="#fef3c7">• <strong>Target Nodes:</strong> `dc01` · `dc02` · `dc03` (Forests) · `mbr01` · `mbr02` · `linux01` · `ws01` (Windows 11)</text>
+      <text x="0" y="16" font-family="sans-serif" font-size="14.5" font-weight="600" fill="#fef3c7">• <strong>Target Nodes:</strong> `dc01` · `dc02` (Forests) · `member servers` · `linux` · `windows endpoints`</text>
       <text x="0" y="42" font-family="sans-serif" font-size="14.5" font-weight="600" fill="#fef3c7">• <strong>Active Implants:</strong> Havoc Demon · Sliver Beacon · Adaptix Beacon · <strong>Meridian Parallax (Go Stdlib)</strong></text>
       <text x="0" y="68" font-family="sans-serif" font-size="14.5" font-weight="700" fill="#34d399">• Callbacks: HTTP/S to `:80` with header `X-Request-ID: cadre-c2` or UDP DNS to `:5353`</text>
     </g>

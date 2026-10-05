@@ -317,7 +317,7 @@ services:
       # Only used when seeding config.json on a FRESH state volume; an existing
       # meridian_data volume keeps the domain it was created with (see
       # Doc/Docker.md for the migration note).
-      MERIDIAN_DNS_DOMAIN: ${MERIDIAN_DNS_DOMAIN:-c2.cadre.local}
+      MERIDIAN_DNS_DOMAIN: ${MERIDIAN_DNS_DOMAIN:-c2.lab.local}
       # Backend header gate: the HTTP listener itself rejects requests without
       # this header (404), so anything reaching meridian:8080 directly — not
       # just through the redirector — is gated too. Same values as the
@@ -344,8 +344,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       # The docker CLI is installed in the image (see portal/Dockerfile), so
       # c2backends.py can `docker exec` psql (Mythic) and the meridian CLI.
-      # Tasking + victim commands run over SSH as the lab operator.
-      - "${WS01_SSH_KEY_PATH:-/dev/null}:/root/.ssh/cadre-ws01-key:ro"
+      # Tasking + victim commands run over SSH to the configured target.
+      - "${VICTIM_SSH_KEY_PATH:-/dev/null}:/root/.ssh/victim-key:ro"
     environment:
       REDIRECTOR_HOST: redirector
       REDIRECTOR_HTTP_PORT: ${REDIRECTOR_HTTP_PORT:-80}
@@ -355,16 +355,16 @@ services:
       MYTHIC_USERNAME: ${MYTHIC_ADMIN_USERNAME:-mythic_admin}
       MYTHIC_PASSWORD: ${MYTHIC_ADMIN_PASSWORD:-mythic}
       MYTHIC_DB_CONTAINER: c2stack-mythic_postgres-1
-      WS01_SSH: "${WS01_SSH_TARGET:-analyst_t1@192.168.77.62}"
-      VICTIM_REDIRECTOR_IP: ${VICTIM_REDIRECTOR_IP:-192.168.77.1}
-      WS01_SSH_KEY: /root/.ssh/cadre-ws01-key
+      VICTIM_SSH_TARGET: "${VICTIM_SSH_TARGET:-}"
+      VICTIM_REDIRECTOR_IP: ${VICTIM_REDIRECTOR_IP:-192.168.100.1}
+      VICTIM_SSH_KEY: /root/.ssh/victim-key
       MERIDIAN_URI_PREFIX: ${MERIDIAN_URI_PREFIX:-/gateway/v1/telemetry}
       SLIVER_URI_PREFIX: ${SLIVER_URI_PREFIX:-/cloud/storage/objects}
       HAVOC_URI_PREFIX: ${HAVOC_URI_PREFIX:-/edge/cache/assets}
       ADAPTIX_URI_PREFIX: ${ADAPTIX_URI_PREFIX:-/api/v1/sync}
       MYTHIC_URI_PREFIX: ${MYTHIC_URI_PREFIX:-/cdn/media/stream}
       MERIDIAN_DNS_PORT: ${MERIDIAN_DNS_PORT:-15353}
-      MERIDIAN_DNS_DOMAIN: ${MERIDIAN_DNS_DOMAIN:-c2.cadre.local}
+      MERIDIAN_DNS_DOMAIN: ${MERIDIAN_DNS_DOMAIN:-c2.lab.local}
       SLIVER_CTRL_PORT: ${SLIVER_CTRL_PORT:-31337}
       HAVOC_TS_PORT: ${HAVOC_TS_PORT:-40056}
       ADAPTIX_TS_PORT: ${ADAPTIX_TS_PORT:-4321}

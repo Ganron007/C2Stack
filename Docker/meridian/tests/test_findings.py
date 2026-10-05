@@ -147,10 +147,10 @@ def test_checkin_touch_meta_and_results_commit_together(tmp_path):
     db.insert_task(task)
     mgr.checkin(sid, [{"id": task.id, "status": "ok", "exit_code": 0,
                        "stdout_b64": "d3MxXHZhZ3JhbnQK", "ts": 1.0}],
-                meta={"hostname": "ws01", "user": "WS01\\vagrant"})
+                meta={"hostname": "win-target", "user": "WIN-TARGET\\operator"})
     s = mgr.get(sid)
-    assert s.hostname == "ws01"
-    assert s.user == "WS01\\vagrant"
+    assert s.hostname == "win-target"
+    assert s.user == "WIN-TARGET\\operator"
     assert db.get_task(task.id).completed is True
     assert len(db.list_results(sid)) == 1
 
@@ -162,13 +162,13 @@ def test_meta_persisted_across_db_reopen(tmp_path):
     mgr, db = _manager(tmp_path)
     pub, nonce = _kex_payload()
     rep = mgr.kex(client_pub_b64=pub, client_nonce_b64=nonce,
-                  meta={"hostname": "ws01", "custom": "keepme"})
-    mgr.checkin(rep["session_id"], [], meta={"user": "WS01\\vagrant"})
+                  meta={"hostname": "win-target", "custom": "keepme"})
+    mgr.checkin(rep["session_id"], [], meta={"user": "WIN-TARGET\\operator"})
     dbfile = tmp_path / "state" / "meridian.db"
     db2 = Database(dbfile, master_key=b"x" * 32, encrypt_results=False)
     s = db2.get_session(rep["session_id"])
     assert s.meta.get("custom") == "keepme"
-    assert s.user == "WS01\\vagrant"
+    assert s.user == "WIN-TARGET\\operator"
 
 
 # --- #13: store_results actually encrypts ----------------------------------

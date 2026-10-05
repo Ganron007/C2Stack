@@ -56,30 +56,30 @@ EXTRA_PROBES=""
 if [ "${#PROFILES[@]}" -gt 0 ]; then
   EXTRA_PROBES="  # with --mythic:
     curl -H \"\${C2_HEADER_NAME:-X-Request-ID}: \${C2_HEADER_VALUE:-cadre-c2}\" \\\\
-      http://<host-ip-on-vmnet2>:\${REDIRECTOR_HTTP_PORT:-80}\${MYTHIC_URI_PREFIX:-/cdn/media/stream}/
+      http://<redirector-host>:\${REDIRECTOR_HTTP_PORT:-80}\${MYTHIC_URI_PREFIX:-/cdn/media/stream}/
   # with --adaptix (needs an HTTP listener created in the Qt client first):
     curl -H \"\${C2_HEADER_NAME:-X-Request-ID}: \${C2_HEADER_VALUE:-cadre-c2}\" \\\\
-      http://<host-ip-on-vmnet2>:\${REDIRECTOR_HTTP_PORT:-80}\${ADAPTIX_URI_PREFIX:-/api/v1/sync}/"
+      http://<redirector-host>:\${REDIRECTOR_HTTP_PORT:-80}\${ADAPTIX_URI_PREFIX:-/api/v1/sync}/"
 fi
 
 cat <<EOF
 
 [bootstrap] Next steps for the operator:
-  - C2Stack Flight Control UI    : http://localhost:${PORTAL_PORT:-8000} (or http://<host-ip-on-vmnet2>:${PORTAL_PORT:-8000})
-  - Redirector callback endpoint : http://<host-ip-on-vmnet2>:${REDIRECTOR_HTTP_PORT:-80}
-  - Mythic UI (if enabled)       : https://<host-ip-on-vmnet2>:${MYTHIC_UI_PORT:-7443}
+  - C2Stack Flight Control UI    : http://localhost:${PORTAL_PORT:-8000} (or http://<redirector-host>:${PORTAL_PORT:-8000})
+  - Redirector callback endpoint : http://<redirector-host>:${REDIRECTOR_HTTP_PORT:-80}
+  - Mythic UI (if enabled)       : https://<redirector-host>:${MYTHIC_UI_PORT:-7443}
   - Sliver operator port         : ${SLIVER_CTRL_PORT:-31337}
   - Havoc teamserver port        : ${HAVOC_TS_PORT:-40056}
   - Adaptix teamserver port      : ${ADAPTIX_TS_PORT:-4321}  (Qt GUI client)
-  - Meridian DNS Listener        : <host-ip-on-vmnet2>:${MERIDIAN_DNS_PORT:-15353}/udp (DNS Covert Channel, zone ${MERIDIAN_DNS_DOMAIN:-c2.cadre.local})
-  - Meridian HTTP Callback       : http://<host-ip-on-vmnet2>:${REDIRECTOR_HTTP_PORT:-80}${MERIDIAN_URI_PREFIX:-/gateway/v1/telemetry}
+  - Meridian DNS Listener        : <redirector-host>:${MERIDIAN_DNS_PORT:-15353}/udp (DNS Covert Channel, zone ${MERIDIAN_DNS_DOMAIN:-c2.lab.local})
+  - Meridian HTTP Callback       : http://<redirector-host>:${REDIRECTOR_HTTP_PORT:-80}${MERIDIAN_URI_PREFIX:-/gateway/v1/telemetry}
 
   Verify the redirector decoy page (no header -> CloudEdge CDN):
-    curl http://<host-ip-on-vmnet2>:${REDIRECTOR_HTTP_PORT:-80}/
+    curl http://<redirector-host>:${REDIRECTOR_HTTP_PORT:-80}/
 
   Verify C2 routing (with header -> backend). Meridian is always enabled, so
   probe it; the Mythic/Adaptix probes need their profiles:
     curl -H "${C2_HEADER_NAME:-X-Request-ID}: ${C2_HEADER_VALUE:-cadre-c2}" \\
-      http://<host-ip-on-vmnet2>:${REDIRECTOR_HTTP_PORT:-80}${MERIDIAN_URI_PREFIX:-/gateway/v1/telemetry}/
+      http://<redirector-host>:${REDIRECTOR_HTTP_PORT:-80}${MERIDIAN_URI_PREFIX:-/gateway/v1/telemetry}/
 ${EXTRA_PROBES}
 EOF

@@ -32,8 +32,10 @@ MERIDIAN_PORT = int(os.environ.get("MERIDIAN_BACKEND_PORT", "8080"))
 REDIRECTOR_HOST = os.environ.get("REDIRECTOR_HOST", "redirector")
 REDIRECTOR_PORT = int(os.environ.get("REDIRECTOR_HTTP_PORT", "80"))
 
-WS01_SSH = os.environ.get("WS01_SSH", "analyst_t1@192.168.77.62")
-WS01_SSH_KEY = os.environ.get("WS01_SSH_KEY", "/root/.ssh/cadre-ws01-key")
+# Victim/target host the operator drives over SSH (user@host). No defaults:
+# a lab on other addressing must configure these explicitly.
+VICTIM_SSH = os.environ.get("VICTIM_SSH_TARGET", "")
+VICTIM_SSH_KEY = os.environ.get("VICTIM_SSH_KEY", "")
 
 
 class BackendError(RuntimeError):
@@ -313,16 +315,27 @@ def probe_redirector(path: str, headers: dict[str, str] | None = None,
 
 
 # --------------------------------------------------------------------------
-# ws01 - victim host, over SSH
+# victim/target host, over SSH
 # --------------------------------------------------------------------------
-def ws01_exec(command: str, timeout: int = 30) -> dict[str, Any]:
-    """Run a command on the victim. Detached launch uses WMI Win32_Process.Create
-    so the process is not killed when the SSH session closes."""
-    key = WS01_SSH_KEY if os.path.exists(WS01_SSH_KEY) else None
+def _victim_host() -> str:
+    """Host part of the configured VICTIM_SSH target (user@host → host)."""
+    target = VICTIM_SSH.rsplit("@", 1)[-1].strip()
+    return target.split(":")[0] if target else ""
+
+
+def victim_exec(command: str, timeout: int = 30) -> dict[str, Any]:
+    """Run a command on the configured victim/target host over SSH.
+
+    Detached launch uses WMI Win32_Process.Create so the process is not
+    killed when the SSH session closes.
+    """
+    if not VICTIM_SSH:
+        return {"ok": False, "error": "VICTIM_SSH_TARGET is not configured"}
+    key = VICTIM_SSH_KEY if VICTIM_SSH_KEY and os.path.exists(VICTIM_SSH_KEY) else None
     cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=12"]
     if key:
         cmd += ["-i", key]
-    cmd += [WS01_SSH, command]
+    cmd += [VICTIM_SSH, command]
     try:
         done = subprocess.run(cmd, capture_output=True, timeout=timeout, check=False)
     except subprocess.TimeoutExpired:
@@ -337,9 +350,12 @@ def ws01_exec(command: str, timeout: int = 30) -> dict[str, Any]:
     }
 
 
-def ws01_reachable() -> bool:
+def victim_reachable() -> bool:
+    host = _victim_host()
+    if not host:
+        return False
     try:
-        with socket.create_connection(("192.168.77.62", 22), timeout=3):
+        with socket.create_connection((host, 22), timeout=3):
             return True
     except OSError:
         return False

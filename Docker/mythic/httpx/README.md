@@ -31,4 +31,4 @@ boot, and the build merges the uploaded variation into the same file at runtime.
 | `post.client.message.location` | `"body"` | Not `""`. Docs list only `cookie` / `query` / `header` / `body`. |
 | `get.client.transforms[0].action` | `base64url` | Every upstream example uses `base64url`. Padded `base64` emits `=` which is unsafe in a query string. |
 | `X-Request-ID: cadre-c2` | present on both | The redirector only proxies when this header matches; without it the agent gets the 406-byte CloudEdge decoy and never registers. |
-| `callback_host` (build param) | `http://192.168.77.1` | Host only. A port in it fails the OPSEC check (`callback host is improperly configured!`); the port goes in `callback_port`. The **path** prefix is not needed here because httpx takes the full URI from `uris`. |
+| `callback_host` (build param) | `http://192.168.100.1` | Host only. A port in it fails the OPSEC check (`callback host is improperly configured!`); the port goes in `callback_port`. The **path** prefix is not needed here because httpx takes the full URI from `uris`. |

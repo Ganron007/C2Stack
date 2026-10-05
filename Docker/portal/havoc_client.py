@@ -95,7 +95,7 @@ PROC_SUBCOMMAND_SHELL = 4
 #: its CommandSend.cc frame and the daemon-side switch in
 #: teamserver/pkg/agent/demons.go, so the portal can offer the whole Demon
 #: vocabulary instead of just `shell`. Entries flagged "verified" ran live
-#: against a real Demon on ws01 (see matrix §4.3); the rest have correct
+#: against a real Demon on the lab target (see matrix §4.3); the rest have correct
 #: source-derived shapes but no live run yet.
 #: NOTE: the daemon's FS switch has NO "ls" case — console `ls` sends
 #: SubCommand "dir". An earlier portal build sent "ls" and only appeared to
@@ -854,7 +854,7 @@ def _parse_console(chunks: list[str]) -> str:
 
     The teamserver interleaves several JSON objects per task:
       {"Message":"Send Task to Agent [112 bytes]","Type":"Good"}   <- noise
-      {"Message":"Received Output [14 bytes]:","Output":"ws01\\vagrant\\r\\n","Type":"Good"}
+      {"Message":"Received Output [14 bytes]:","Output":"win-target\\operator\\r\\n","Type":"Good"}
       {"Message":"Current directory: C:\\...","Type":"Info"}       <- RESULT
       {}                      <- separators between frames
     """

