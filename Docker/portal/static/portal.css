@@ -982,6 +982,44 @@ body {
   border: 1px solid rgba(245, 158, 11, .45);
 }
 .ops-table button { padding: .2rem .55rem; font-size: .72rem; }
+
+/* ---- Lab configuration tab ---- */
+.config-card { margin-bottom: 1rem; }
+.config-note {
+  font-size: .8rem; color: var(--text-muted); line-height: 1.5;
+  border-left: 3px solid var(--cyan-base); padding: .5rem .75rem;
+  background: rgba(0, 212, 255, .05); border-radius: 0 4px 4px 0;
+  margin-bottom: .9rem;
+}
+.config-note code { font-size: .74rem; }
+.config-fields { display: flex; flex-direction: column; gap: .55rem; }
+.config-row {
+  display: grid; grid-template-columns: minmax(220px, 1fr) minmax(240px, 1.1fr);
+  gap: .9rem; align-items: start;
+  padding: .6rem .7rem; border: 1px solid rgba(255, 255, 255, .07);
+  border-radius: 6px; background: rgba(255, 255, 255, .02);
+}
+@media (max-width: 860px) { .config-row { grid-template-columns: 1fr; } }
+.config-label strong { display: inline-block; margin-right: .4rem; font-size: .85rem; }
+.config-help {
+  display: block; margin-top: .3rem; font-size: .74rem;
+  color: var(--text-muted); line-height: 1.45;
+}
+.config-env {
+  display: block; margin-top: .25rem; font-size: .7rem;
+  color: var(--text-muted); opacity: .8; font-family: var(--font-mono);
+}
+.config-input { display: flex; gap: .4rem; align-items: center; }
+.config-input .code-input { flex: 1; min-width: 0; }
+.config-input-actions { display: flex; gap: .3rem; }
+.config-actions {
+  display: flex; gap: .5rem; align-items: center; flex-wrap: wrap;
+  margin-top: 1rem; padding-top: .9rem;
+  border-top: 1px solid rgba(255, 255, 255, .07);
+}
+.config-actions .hint-inline.warn { color: #f59e0b; }
+.config-actions .hint-inline.err { color: var(--crimson-glow); }
+.pane-sub { font-size: .8rem; color: var(--text-muted); line-height: 1.5; }
 .empty-row { text-align: center; color: var(--text-muted); font-style: italic; }
 
 .ops-target {

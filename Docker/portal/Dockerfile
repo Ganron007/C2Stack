@@ -22,7 +22,11 @@ RUN apt-get update -qq \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py c2backends.py adaptix_client.py havoc_client.py sliver_client.py ./
+# labconfig.py MUST be listed here: it is the settings store the Lab Config
+# tab writes to. Omitting it produced a hard ModuleNotFoundError at boot,
+# which takes the whole portal (every tab) down - not a degraded feature.
+COPY app.py c2backends.py adaptix_client.py havoc_client.py sliver_client.py \
+     labconfig.py ./
 COPY static/ ./static/
 
 ENV PYTHONUNBUFFERED=1

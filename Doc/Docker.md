@@ -137,14 +137,45 @@ C2Stack/Docker/
 │                             # writes its own boot.rc: --lhost must be the explicit
 │                             # container IPv4, 0.0.0.0 binds [::]-only and refuses IPv4)
 ├── havoc/                    # vendored Havoc source (GPL-3.0) + Dockerfile (toolchains baked)
-│   ├── havoc.yaotl           # teamserver profile TEMPLATE: HTTP listener :80,
-│   │                          #   Hosts = __VICTIM_REDIRECTOR_IP__ token
+│   ├── havoc.yaotl           # teamserver profile TEMPLATE: listener host/port,
+│   │                          #   URI prefix and C2 header are placeholders
 │   └── entrypoint.sh         # renders the template into the data volume at start
 ├── adaptix/                  # vendored Adaptix source (GPL-3.0) + Dockerfile (built in-repo)
 ├── mythic/                   # (optional) config + apollo sibling container wiring
 │   └── apollo/rabbitmq_config.json   # payload-type container self-registration config
 └── portal/                   # Flight Control dashboard (:8000) + tests
+    ├── labconfig.py          # UI-editable lab settings store (override > env > default)
+    └── test_labconfig.py     # validation/persistence rules for those settings
 ```
+
+### Configuring the lab (no hardcoded addresses)
+
+Every IP, port, prefix and header resolves through
+`Docker/portal/labconfig.py` in the order **UI override → `Docker/.env` →
+documented default**. Nothing is baked into the code.
+
+- **Portal scope** (`victim_redirector_ip`, `victim_ssh_target`) applies
+  instantly and covers everything the portal generates: stagers for all five
+  frameworks, Havoc/Adaptix listener callback addresses, Mythic `callback_host`,
+  and the Sliver generate URL.
+- **Stack scope** (header name/value, prefixes, control ports, DNS domain) is
+  consumed by the *other* containers at boot — Apache routes via
+  `entrypoint.sh` envsubst, Havoc's profile template, Meridian's seeded listener
+  config — so those need the generated `.env` plus a container recreate. The
+  Lab Config tab says which ones and emits the exact lines.
+
+| Where | What it configures |
+|---|---|
+| Portal → **⚙️ Lab Config** | All 15 settings, live, with validation |
+| `GET /api/config` | Schema + resolved values + provenance |
+| `POST /api/config` | Persist overrides (`values` to set, `clear` to reset) |
+| `GET /api/config/env-file` | `Docker/.env` lines for stack-scope settings |
+| `Docker/.env` | Fallback for both scopes; still works with the UI untouched |
+
+Unknown keys, non-numeric ports, prefixes without a leading `/`, and a
+`host:port` in the victim IP are all rejected with a reason — a silently
+ignored typo would leave an operator believing they had re-pointed their
+implants.
 
 ### Networks
 
@@ -266,29 +297,36 @@ the rest are created from the operator consoles:
   headers, so the redirector matches this route on path alone
   (`SLIVER_HEADER_GATE=off`).
 - **Havoc** — automatic: `Docker/havoc/havoc.yaotl` is a **template** bind-mounted
-  read-only at `/templates/havoc.yaotl`; `Docker/havoc/entrypoint.sh` renders it
-  with `VICTIM_REDIRECTOR_IP` into the `havoc_data` volume at every start
-  (`Hosts = ["<your redirector IP>"]`), then execs the teamserver. The teamserver
-  runs `./havoc server -d` with no `-profile` flag, so it always reads the volume
-  copy — rendering at start means a stale volume copy can never silently misdirect
-  beacons (the previous failure mode). A leftover `__VICTIM_REDIRECTOR_IP__` token is
-  fatal at boot, not best-effort. Set the IP in `Docker/.env` (`VICTIM_REDIRECTOR_IP`);
-  never commit a real address in the profile. Base path `/edge/cache/assets` +
-  header gate live in the same file. No GUI needed for operation:
-  `Docker/portal/havoc_client.py` speaks the raw WebSocket protocol (SHA3-256 auth,
-  numeric CommandIDs) for builds, sessions, and the full Demon command catalogue.
+  read-only at `/templates/havoc.yaotl`; `Docker/havoc/entrypoint.sh` renders every
+  network value in it from the environment (`VICTIM_REDIRECTOR_IP`,
+  `REDIRECTOR_HTTP_PORT`, `HAVOC_TS_PORT`, `HAVOC_URI_PREFIX`, `C2_HEADER_NAME`,
+  `C2_HEADER_VALUE`) into the `havoc_data` volume at every start, then execs the
+  teamserver. The teamserver runs `./havoc server -d` with no `-profile` flag, so it
+  always reads the volume copy — rendering at start means neither the committed file
+  nor a stale volume copy can silently misdirect beacons (the previous failure mode).
+  Any placeholder surviving rendering is fatal at boot, not best-effort; note the
+  template's own comments must not spell the token syntax literally or the guard
+  would match the documentation itself. Set values in `Docker/.env` (or via the
+  portal's Lab Config tab, which generates those lines). No GUI needed for
+  operation: `Docker/portal/havoc_client.py` speaks the raw WebSocket protocol
+  (SHA3-256 auth, numeric CommandIDs) for builds, sessions, and the full Demon
+  command catalogue.
 
 ### Key environment variables (`Docker/.env`, see `.env.example`)
 
 | Variable | Default | Used for |
 |---|---|---|
-| `VICTIM_REDIRECTOR_IP` | `192.168.100.1` | Victim-facing redirector IP baked into portal stagers + payload callbacks |
+| `VICTIM_REDIRECTOR_IP` | `192.168.100.1` | Victim-facing redirector IP used by portal stagers, payload callbacks and the rendered Havoc profile. **Portal scope** — settable in the Lab Config tab without a recreate |
 | `REDIRECTOR_HTTP_PORT` | `80` | Published redirector port |
 | `C2_HEADER_NAME` / `C2_HEADER_VALUE` | `X-Request-ID` / `cadre-c2` | Redirector gate header (+ Meridian backend gate) |
 | `MERIDIAN_REQUIRE_HEADER_NAME/VALUE` | (same as C2 header) | Meridian backend header gate (unset = disabled) |
 | `SLIVER_HEADER_GATE` | `off` | `off` = path-only match (required: Sliver sends no headers) |
 | `MERIDIAN_DNS_DOMAIN` / `MERIDIAN_DNS_PORT` | `c2.lab.local` / `15353` | DNS listener domain + host UDP port |
 | `*_URI_PREFIX` | (per-framework paths) | Redirector route prefixes; must match agent configs exactly |
+
+Every row above is also exposed in the portal's **⚙️ Lab Config** tab. Rows
+marked portal scope apply on save; the rest are stack scope (read by the other
+containers at boot) and the tab emits the matching `.env` lines for you.
 - **Mythic** — the `http` C2 profile container is registered and the listener is live
   inside `mythic_http` (:80). Create the profile instance via the REST API:
   `POST /api/v1.4/create_c2parameter_instance_webhook` with a JSON-string `c2_instance`.

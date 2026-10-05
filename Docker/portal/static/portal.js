@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initPayloadStudio();
   initFleetRadar();
   initOpsConsole();
+  initLabConfig();
 });
 
 // ==========================================================================
@@ -1027,6 +1028,156 @@ function initOpsConsole() {
     }
   });
   document.getElementById('stage-run').addEventListener('click', opsStageFile);
+}
+
+// ============================================================================
+// Lab Configuration (tab-config)
+// ============================================================================
+// Every address, port, prefix and header the lab uses is editable here.
+// This is the answer to "I need the portal to point at MY network": the
+// settings live in the portal (overriding Docker/.env), so a new user
+// configures the stack from the browser instead of editing files.
+//
+// The UI keeps the distinction the backend makes: portal-scope values apply
+// immediately, stack-scope values need the generated .env + a container
+// recreate. Showing that honestly beats a save button that silently does
+// nothing for half the settings.
+let cfgSnapshot = null;
+
+async function initLabConfig() {
+  document.getElementById('config-save').addEventListener('click', cfgSave);
+  document.getElementById('config-reload').addEventListener('click', () => {
+    cfgRender();
+    cfgStatus('Reloaded from the portal.', '');
+  });
+  document.getElementById('config-env').addEventListener('click', () => {
+    window.location.href = '/api/config/env-file';
+  });
+  cfgLoad();
+}
+
+async function cfgLoad() {
+  const wrap = document.getElementById('config-fields');
+  wrap.innerHTML = '<p class="empty-row">Loading configuration…</p>';
+  try {
+    const res = await fetch('/api/config');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    cfgSnapshot = data;
+    cfgRender();
+    document.getElementById('config-env-out').textContent =
+      (data.env_lines || []).join('\n') || '(no stack-scope settings)';
+  } catch (err) {
+    wrap.innerHTML = '<p class="empty-row">Could not load configuration: ' +
+      err.message + '</p>';
+  }
+}
+
+function cfgStatus(msg, cls) {
+  const el = document.getElementById('config-status');
+  el.textContent = msg;
+  el.className = 'hint-inline' + (cls ? ' ' + cls : '');
+}
+
+function cfgRender() {
+  const wrap = document.getElementById('config-fields');
+  const settings = (cfgSnapshot && cfgSnapshot.settings) || {};
+  wrap.innerHTML = '';
+  const order = Object.keys(settings);
+  if (!order.length) {
+    wrap.innerHTML = '<p class="empty-row">No settings exposed.</p>';
+    return;
+  }
+  for (const key of order) {
+    const s = settings[key];
+    const row = document.createElement('div');
+    row.className = 'config-row';
+    const stack = s.scope === 'stack';
+    row.innerHTML =
+      '<div class="config-label">' +
+        '<strong>' + s.label + '</strong> ' +
+        '<span class="status-badge ' + (stack ? 'stopped' : 'running') + '" ' +
+        'title="' + (stack
+          ? 'Read by the other containers at boot. Change here, then copy the .env below and recreate them.'
+          : 'Applied immediately by the portal.') + '">' +
+          (stack ? 'STACK' : 'PORTAL') + '</span>' +
+        (s.overridden ? ' <span class="status-badge running">OVERRIDDEN</span>' : '') +
+        '<small class="config-help">' + s.help + '</small>' +
+        '<small class="config-env">env: ' + s.env + '</small>' +
+      '</div>' +
+      '<div class="config-input">' +
+        '<input type="text" class="code-input" data-cfg-key="' + key + '" ' +
+        'value="' + String(s.value).replace(/"/g, '&quot;') + '" ' +
+        'placeholder="' + String(s.default) + '">' +
+        '<div class="config-input-actions">' +
+          '<button class="btn btn-outline btn-sm" data-cfg-reset="' + key + '">Reset</button>' +
+        '</div>' +
+      '</div>';
+    wrap.appendChild(row);
+  }
+  wrap.querySelectorAll('[data-cfg-key]').forEach(inp => {
+    inp.addEventListener('input', () => cfgStatus('Unsaved changes.', 'warn'));
+  });
+  wrap.querySelectorAll('[data-cfg-reset]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.getAttribute('data-cfg-reset');
+      const spec = settings[key];
+      const inp = wrap.querySelector('[data-cfg-key="' + key + '"]');
+      // Empty = clear the override and fall back to env/default, which is
+      // what "reset" means when the portal owns the value.
+      inp.value = spec.overridden ? '' : String(spec.default);
+      cfgStatus('Unsaved changes.', 'warn');
+    });
+  });
+}
+
+async function cfgSave() {
+  const btn = document.getElementById('config-save');
+  const values = {};
+  const clear = [];
+  const settings = (cfgSnapshot && cfgSnapshot.settings) || {};
+  document.querySelectorAll('#config-fields [data-cfg-key]').forEach(inp => {
+    const key = inp.getAttribute('data-cfg-key');
+    const spec = settings[key];
+    const typed = inp.value.trim();
+    // An emptied field for a previously-overridden key means "drop my
+    // override"; for a non-overridden key it means "leave it alone".
+    if (typed === '' && spec && spec.overridden) { clear.push(key); return; }
+    if (typed === '' || typed === String(spec && spec.value)) return;
+    values[key] = typed;
+  });
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values, clear }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      cfgStatus('Rejected: ' + (data.detail || res.statusText), 'err');
+      return;
+    }
+    const n = Object.keys(data.applied || {}).length + (data.clear || []).length;
+    const restart = data.restart_required || [];
+    cfgSnapshot = { ...cfgSnapshot, settings: data.settings };
+    cfgRender();
+    document.getElementById('config-env-out').textContent =
+      (data.env_file || '').split('\n').filter(l =>
+        l.trim() && !l.startsWith('#')).join('\n') ||
+      '(no stack-scope settings)';
+    if (restart.length) {
+      cfgStatus('Saved ' + n + ' setting(s). Stack-scope change detected (' +
+        restart.join(', ') + '): copy the .env above into Docker/.env and ' +
+        'recreate the containers.', 'warn');
+    } else {
+      cfgStatus('Saved ' + n + ' setting(s) — applied immediately.', '');
+    }
+  } catch (err) {
+    cfgStatus('Save failed: ' + err.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // Staged operator file: uploaded to Mythic once (returns agent_file_id for

