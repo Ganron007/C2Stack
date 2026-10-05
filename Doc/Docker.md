@@ -137,7 +137,9 @@ C2Stack/Docker/
 │                             # writes its own boot.rc: --lhost must be the explicit
 │                             # container IPv4, 0.0.0.0 binds [::]-only and refuses IPv4)
 ├── havoc/                    # vendored Havoc source (GPL-3.0) + Dockerfile (toolchains baked)
-│   └── havoc.yaotl           # C2Stack teamserver profile: HTTP listener :80 (redirector)
+│   ├── havoc.yaotl           # teamserver profile TEMPLATE: HTTP listener :80,
+│   │                          #   Hosts = __VICTIM_REDIRECTOR_IP__ token
+│   └── entrypoint.sh         # renders the template into the data volume at start
 ├── adaptix/                  # vendored Adaptix source (GPL-3.0) + Dockerfile (built in-repo)
 ├── mythic/                   # (optional) config + apollo sibling container wiring
 │   └── apollo/rabbitmq_config.json   # payload-type container self-registration config
@@ -207,9 +209,10 @@ images and the named volumes were intact. Re-verified after boot:
   listener, decoy without header. Full garble `generate` proven on v1.7.7 (47s build);
   headless generation works: `sliver-client console --rc gen.rc` where the rc file
   contains `generate --http 192.168.100.1:80 --os windows --arch amd64 --name X` + `exit`.
-- **Havoc** — v0.7 teamserver with the C2Stack HTTP listener baked into the profile
-  (`Docker/havoc/havoc.yaotl`): bind :80, Uris `/edge/cache/assets/`,
-  header `X-Request-ID: cadre-c2`, Hosts `192.168.100.1` (the redirector). Live-verified
+- **Havoc** — v0.7 teamserver with the C2Stack HTTP listener in the profile template
+  (`Docker/havoc/havoc.yaotl`, rendered by `entrypoint.sh` from `VICTIM_REDIRECTOR_IP`):
+  bind :80, Uris `/edge/cache/assets/`,
+  header `X-Request-ID: cadre-c2`, Hosts = the redirector IP. Live-verified
   through the redirector. Demon payloads are compiled SERVER-SIDE by the teamserver —
   the image now ships `payloads/Demon` (sources) + `payloads/DllLdr.x64.bin` +
   `Shellcode.x64/x86.bin` and the musl cross-gcc/nasm toolchains (this was a real gap:
@@ -262,14 +265,18 @@ the rest are created from the operator consoles:
   so they call back through the redirector. The implant sends no custom
   headers, so the redirector matches this route on path alone
   (`SLIVER_HEADER_GATE=off`).
-- **Havoc** — automatic: `Docker/havoc/havoc.yaotl` (baked into the image at build)
-  starts an HTTP listener on port `80` with `Hosts = ["192.168.100.1"]` (the C2Stack
-  redirector, so generated Demons phone home correctly out of the box). If the lab
-  redirector host differs, edit Hosts in the Qt client (Listeners → c2stack - http)
-  or in the profile + rebuild. Base path `/edge/cache/assets` + header come from the
-  same file. No GUI needed for operation: `Docker/portal/havoc_client.py` speaks
-  the raw WebSocket protocol (SHA3-256 auth, numeric CommandIDs) for builds,
-  sessions, and the full Demon command catalogue.
+- **Havoc** — automatic: `Docker/havoc/havoc.yaotl` is a **template** bind-mounted
+  read-only at `/templates/havoc.yaotl`; `Docker/havoc/entrypoint.sh` renders it
+  with `VICTIM_REDIRECTOR_IP` into the `havoc_data` volume at every start
+  (`Hosts = ["<your redirector IP>"]`), then execs the teamserver. The teamserver
+  runs `./havoc server -d` with no `-profile` flag, so it always reads the volume
+  copy — rendering at start means a stale volume copy can never silently misdirect
+  beacons (the previous failure mode). A leftover `__VICTIM_REDIRECTOR_IP__` token is
+  fatal at boot, not best-effort. Set the IP in `Docker/.env` (`VICTIM_REDIRECTOR_IP`);
+  never commit a real address in the profile. Base path `/edge/cache/assets` +
+  header gate live in the same file. No GUI needed for operation:
+  `Docker/portal/havoc_client.py` speaks the raw WebSocket protocol (SHA3-256 auth,
+  numeric CommandIDs) for builds, sessions, and the full Demon command catalogue.
 
 ### Key environment variables (`Docker/.env`, see `.env.example`)
 

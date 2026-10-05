@@ -67,6 +67,11 @@ VOLUME ["/opt/havoc/teamserver/data"]
 # C2 HTTP listener (proxied by the redirector) and teamserver control port.
 EXPOSE 80 40056
 
+# Entrypoint renders the neutral profile template with the lab's
+# VICTIM_REDIRECTOR_IP before launch (see entrypoint.sh).
+COPY entrypoint.sh /usr/local/bin/havoc-entrypoint.sh
+RUN chmod +x /usr/local/bin/havoc-entrypoint.sh
+
 # Havoc teamserver v0.7 CLI. `-d` runs the default profile
 # (./data/havoc.yaotl, operators 5pider/Neo, password password1234).
-CMD ["./havoc", "server", "-d"]
+ENTRYPOINT ["/usr/local/bin/havoc-entrypoint.sh"]

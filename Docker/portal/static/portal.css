@@ -972,6 +972,15 @@ body {
 }
 .ops-table tr.selected { background: rgba(0, 212, 255, .1); }
 .ops-table tr.selected td:first-child { box-shadow: inset 3px 0 0 var(--cyan-base); }
+/* A session the teamserver still lists but that stopped checking in: dimmed
+   so a long history of dead callbacks doesn't read as live agents. */
+.ops-table tr.stale td { opacity: .5; }
+.ops-table tr.stale .status-badge.warn {
+  opacity: 1;
+  background: rgba(245, 158, 11, .15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, .45);
+}
 .ops-table button { padding: .2rem .55rem; font-size: .72rem; }
 .empty-row { text-align: center; color: var(--text-muted); font-style: italic; }
 

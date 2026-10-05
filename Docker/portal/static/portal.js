@@ -28,6 +28,9 @@ function initTabs() {
       btn.classList.add('active');
       const pane = document.getElementById(targetTab);
       if (pane) pane.classList.add('active');
+      // Opening the Operations Console should show live sessions without
+      // the operator having to press Refresh (the query polls every backend).
+      if (targetTab === 'tab-ops' && typeof opsRefresh === 'function') opsRefresh();
     });
   });
 }
@@ -53,6 +56,11 @@ async function initStatusHUD() {
       }
       if (headerValEl && data.c2_header) {
         headerValEl.textContent = data.c2_header;
+      }
+      // Footer host target must follow the env, not a baked-in example IP.
+      const victimEl = document.getElementById('footer-victim-ip');
+      if (victimEl && data.victim_redirector_ip) {
+        victimEl.textContent = data.victim_redirector_ip;
       }
     } catch (err) {
       grid.innerHTML = `<div class="card" style="color:var(--crimson-glow);">Failed to connect to portal API backend: ${err.message}</div>`;
@@ -485,11 +493,16 @@ function opsRenderSessions(sessions) {
     // Meridian records no process name (only a pid), so fall back to the pid
     // rather than rendering a bare "?".
     const proc = [s.process, s.pid ? 'pid ' + s.pid : ''].filter(Boolean).join(' / ') || '—';
+    // Stale sessions are kept by every teamserver for forensics, so mark them
+    // instead of implying every listed agent is still checking in.
+    const stale = s.is_alive === false;
+    tr.className += stale ? ' stale' : '';
     tr.innerHTML =
       '<td><span class="fw-tag">' + (s.backend || '?').toUpperCase() + '</span></td>' +
       '<td>' + (s.hostname || '?') + (s.transport ? ' <small>(' + s.transport + ')</small>' : '') + '</td>' +
       '<td><code>' + (s.username || '?') + '</code></td>' +
-      '<td><code>' + (proc || '?') + '</code></td>' +
+      '<td><code>' + (proc || '?') + '</code>' +
+      (stale ? ' <span class="status-badge warn" title="no check-in within the framework sleep window">STALE</span>' : '') + '</td>' +
       '<td><button class="btn btn-outline-success btn-sm">Select</button></td>';
     tr.querySelector('button').addEventListener('click', () => opsSelect(s, tr));
     tbody.appendChild(tr);
@@ -591,12 +604,16 @@ async function opsRunTask() {
   const runBtn = document.getElementById('ops-run');
   runBtn.disabled = true;
   meta.textContent = 'tasking…';
-  opsSetOutput('Sending to ' + opsSelected.backend + ' (' + opsSelected.id + ')…\n$ ' + cmd, 'busy');
+  // Capture the selection and the pre-queue task ids up front: the operator
+  // can click another session mid-flight, and the poll must keep pointing at
+  // the session the command was actually sent to.
+  const sess = opsSelected;
+  opsSetOutput('Sending to ' + sess.backend + ' (' + sess.id + ')…\n$ ' + cmd, 'busy');
 
   // Havoc `upload <remote-path>` needs the file bytes: attach the staged
   // file automatically when the command calls for it.
   let upload_data_b64 = null;
-  if (opsSelected.backend === 'havoc' && /^upload\s+\S/.test(cmd)) {
+  if (sess.backend === 'havoc' && /^upload\s+\S/.test(cmd)) {
     if (!opsStagedFile) {
       opsSetOutput('Stage a file first (Payload Builds → Stage operator file).', 'err');
       runBtn.disabled = false;
@@ -605,13 +622,25 @@ async function opsRunTask() {
     }
     upload_data_b64 = opsStagedFile.b64;
   }
+  // A stale session (listed by the teamserver but no longer checking in)
+  // will silently swallow the task, so say so instead of letting the
+  // operator wait on a result that can never arrive.
+  if (sess.is_alive === false) {
+    opsSetOutput('Session ' + sess.id + ' is marked STALE - no check-in within the framework sleep window.\n' +
+      'Select a live session (non-dimmed row); tasking this one will queue with no reply.',
+      'err');
+    meta.textContent = 'stale session';
+    runBtn.disabled = false;
+    return;
+  }
+  const baseline = await opsTaskBaseline(sess);
   try {
     const res = await fetch('/api/ops/task', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        backend: opsSelected.backend,
-        session_id: String(opsSelected.id),
+        backend: sess.backend,
+        session_id: String(sess.id),
         command: cmd,
         wait: 25,
         upload_data_b64: upload_data_b64,
@@ -623,13 +652,116 @@ async function opsRunTask() {
       meta.textContent = '';
       return;
     }
-    opsShowResult(opsSelected.backend, data);
+    opsShowResult(sess.backend, data);
+    // Mythic: output never arrives inside /api/ops/task when the agent's
+    // callback interval (10s + jitter) is longer than the wait, so keep
+    // polling the response table for the task's real stdout.
+    if (sess.backend === 'mythic') {
+      const taskId = (data.result || {}).id || (data.result || {}).display_id;
+      if (taskId && !(data.result || {}).output) {
+        await opsPollMythic(taskId);
+      }
+    }
+    // meridian + adaptix only QUEUE (their agents report on the next tick,
+    // 10-30s), so /api/ops/task returns before any output exists. Poll the
+    // results table for the NEW task id instead of leaving "queued".
+    if (sess.backend === 'meridian' || sess.backend === 'adaptix') {
+      await opsPollResults(sess, cmd, baseline);
+    }
   } catch (err) {
     opsSetOutput('Request failed: ' + err.message, 'err');
   } finally {
     runBtn.disabled = false;
-    meta.textContent = '';
+    // Only reset the meta when the poll did not already report progress.
+    if (!meta.textContent) meta.textContent = '';
   }
+}
+
+// Mythic keeps real stdout in the `response` table, reachable headlessly via
+// /api/ops/results?backend=mythic&session_id=<task id> (the callback interval
+// of 10s + jitter routinely outlasts the API wait).
+async function opsPollMythic(taskId, attempts = 12) {
+  const meta = document.getElementById('ops-output-meta');
+  const out = document.getElementById('ops-output');
+  for (let i = 0; i < attempts; i++) {
+    await new Promise(r => setTimeout(r, 5000));
+    meta.textContent = 'mythic task ' + taskId + ' · waiting for callback (' +
+      ((i + 1) * 5) + 's)';
+    try {
+      const res = await fetch('/api/ops/results?backend=mythic&session_id=' +
+        encodeURIComponent(taskId));
+      if (!res.ok) return;
+      const data = await res.json();
+      const rows = (data.results || []).filter(r => String(r).trim());
+      if (!rows.length) continue;
+      out.className = 'ops-output';
+      out.textContent = rows.join('\n');
+      meta.textContent = 'mythic task ' + taskId + ' · output after ~' +
+        ((i + 1) * 5) + 's';
+      return;
+    } catch (err) {
+      return;
+    }
+  }
+  meta.textContent = 'mythic task ' + taskId + ' · no output within ' +
+    (attempts * 5) + 's';
+}
+
+// Snapshot the task ids that already exist for this session BEFORE queueing,
+// so polling can tell the operator's new result apart from older ones
+// (without this, a dead session shows a previous task's output as if it
+// were the reply - actively misleading).
+async function opsTaskBaseline(sess) {
+  if (sess.backend !== 'meridian' && sess.backend !== 'adaptix') return new Set();
+  try {
+    const url = '/api/ops/results?backend=' + encodeURIComponent(sess.backend) +
+      '&session_id=' + encodeURIComponent(sess.id);
+    const res = await fetch(url);
+    if (!res.ok) return new Set();
+    const data = await res.json();
+    return new Set((data.results || []).map(r => r.a_task_id || r.task_id).filter(Boolean));
+  } catch (err) {
+    return new Set();
+  }
+}
+
+// meridian/adaptix tasking is asynchronous: the agent answers on its next
+// tick, so the output only exists in the completed-task table afterwards.
+// Poll until a task id newer than the pre-queue snapshot carries output.
+async function opsPollResults(sess, cmd, baseline, attempts = 12) {
+  const meta = document.getElementById('ops-output-meta');
+  const out = document.getElementById('ops-output');
+  for (let i = 0; i < attempts; i++) {
+    await new Promise(r => setTimeout(r, 5000));
+    meta.textContent = sess.backend + ' · waiting for result (' + ((i + 1) * 5) + 's)';
+    try {
+      const url = '/api/ops/results?backend=' + encodeURIComponent(sess.backend) +
+        '&session_id=' + encodeURIComponent(sess.id);
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      const rows = (data.results || []).filter(r => {
+        const id = r.a_task_id || r.task_id;
+        const body = (r.a_message || r.a_text || r.stdout || '').trim();
+        return body && (!baseline || !baseline.has(id));
+      });
+      if (!rows.length) continue;
+      const text = rows.slice(0, 3).map(r => {
+        const body = (r.a_text && r.a_text.trim()) || r.a_message || r.stdout;
+        const head = r.a_cmdline || r.module || 'task';
+        const exit = r.exit_code != null && r.module ? '\n(exit ' + r.exit_code + ')' : '';
+        return '$ ' + head + '\n' + String(body).trim() + exit;
+      }).join('\n\n');
+      out.className = 'ops-output';
+      out.textContent = text;
+      meta.textContent = sess.backend + ' · result after ~' + ((i + 1) * 5) + 's';
+      return;
+    } catch (err) {
+      return;
+    }
+  }
+  meta.textContent = sess.backend + ' · no output within ' + (attempts * 5) +
+    's (task queued; check the agent is still checking in)';
 }
 
 // Each backend returns task output in a different shape; normalise them so the
@@ -647,25 +779,34 @@ function opsShowResult(backend, data) {
     }
     meta.textContent = 'task ' + (r.task_id || '') + ' · ' + (r.raw_chunks || 0) + ' frames';
   } else if (backend === 'adaptix') {
-    const tasks = data.results || [];
-    const withOutput = tasks.filter(t => t.a_text && t.a_text.trim());
+    // Real output lives in a_message for most AxScript commands (getuid,
+    // getsystem, disks, ...); a_text only carries stdout of stream commands
+    // like shell/powershell. Show whichever is present, newest first.
+    const tasks = (data.results || []).slice().reverse();
+    const withOutput = tasks.filter(t => (t.a_message || t.a_text || '').trim());
     if (withOutput.length) {
-      text = withOutput.slice(-3).map(t =>
-        '$ ' + (t.a_cmdline || '') + '\n' + t.a_text).join('\n\n');
+      text = withOutput.slice(0, 3).map(t => {
+        const body = (t.a_text && t.a_text.trim()) || t.a_message;
+        return '$ ' + (t.a_cmdline || '') + '\n' + body;
+      }).join('\n\n');
     } else {
-      const r = data.result || {};
-      text = r.message || '(queued; output appears once the agent completes the task)';
+      text = '(queued; polling for the completed task…)';
     }
-    meta.textContent = tasks.length + ' completed task(s)';
+    meta.textContent = (withOutput.length || 0) + ' with output / ' +
+      tasks.length + ' task(s)';
   } else if (backend === 'mythic') {
     const r = data.result || {};
     // Output comes from the response table (task.stdout never carries it
     // in this stack). Falls back to the raw envelope while polling.
-    text = r.output || JSON.stringify(data.result, null, 2);
+    text = r.output || '(task ' + (r.display_id || r.id || '') +
+      ' queued; waiting for the agent callback…)';
     meta.textContent = 'task ' + (r.id || r.display_id || '');
   } else if (backend === 'meridian') {
-    text = typeof data.result === 'string' ? data.result : JSON.stringify(data.result, null, 2);
-    meta.textContent = 'queued (read output from the meridian results table)';
+    // meridian_exec only QUEUES the task and returns a task id; the stdout
+    // lands in the results table a moment later.
+    text = 'queued task ' + ((data.result && data.result.queued) || '') +
+      '\nWaiting for the agent to report back…';
+    meta.textContent = 'meridian (async)';
   } else if (backend === 'sliver') {
     const r = data.result || {};
     if (r.async && r.queued) {
@@ -843,6 +984,11 @@ async function opsRunMythicBuild(out, btn) {
 }
 
 function initOpsConsole() {
+  // Populate immediately - without this the table sits on its
+  // "Loading live sessions." placeholder until the operator presses
+  // Refresh (or ticks auto-refresh). The query takes a few seconds
+  // because every backend is polled sequentially.
+  opsRefresh();
   // Load the tasking vocabularies in the background; preset buttons upgrade
   // to catalogue examples (with help text) once it arrives.
   opsLoadCatalogues().then(() => {

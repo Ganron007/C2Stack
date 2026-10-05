@@ -1181,6 +1181,37 @@ def ops_task(req: TaskRequest) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
+def _havoc_alive(session: dict) -> bool:
+    """Havoc's session list keeps dead demons forever; liveness must be
+    derived from the raw LastCallIn stamp (dd-MM-yyyy HH:mm:ss, teamserver
+    container time = UTC) instead of being hardcoded."""
+    raw = session.get("raw") or {}
+    last = raw.get("LastCallIn")
+    if not last:
+        return True
+    try:
+        from datetime import datetime, timezone
+        dt = datetime.strptime(str(last), "%d-%m-%Y %H:%M:%S")
+        dt = dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return True
+    sleep = float(session.get("sleep") or 5)
+    grace = max(90.0, sleep * 8.0 + 30.0)
+    return (datetime.now(timezone.utc) - dt).total_seconds() < grace
+
+
+def _adaptix_alive(agent: dict) -> bool:
+    """Adaptix's agent list also retains dead agents; a_last_tick is the
+    unix epoch of the last beacon, so liveness is computed, not assumed."""
+    tick = agent.get("a_last_tick")
+    if not tick:
+        return True
+    import time as _time
+    sleep = float(agent.get("a_sleep") or 30)
+    grace = max(150.0, sleep * 8.0 + 60.0)
+    return (_time.time() - float(tick)) < grace
+
+
 @app.get("/api/ops/sessions")
 def ops_sessions() -> dict[str, Any]:
     """Live sessions across every framework that can be queried headlessly.
@@ -1194,9 +1225,9 @@ def ops_sessions() -> dict[str, Any]:
     try:
         rows = cb.mythic_psql(
             "SELECT id, host, user, pid, os, architecture, active, dead, "
-            "process_name, description FROM callback ORDER BY id DESC LIMIT 50;",
+            "process_name, description, last_checkin FROM callback ORDER BY id DESC LIMIT 50;",
             ["id", "host", "user", "pid", "os", "architecture", "active", "dead",
-             "process_name", "description"])
+             "process_name", "description", "last_checkin"])
         for r in rows:
             sessions.append({
                 "id": str(r.get("id")),
@@ -1208,6 +1239,10 @@ def ops_sessions() -> dict[str, Any]:
                 "process": r.get("process_name") or "?",
                 "description": r.get("description") or "",
                 "is_alive": r.get("active") == "t" and r.get("dead") == "f",
+                # Mythic only marks callbacks dead when a new one with the
+                # same fingerprint arrives; expose the stamp so the UI can
+                # show freshness instead of implying every row is live.
+                "last_checkin": str(r.get("last_checkin") or ""),
             })
         backends["mythic"] = {"ok": True, "count": len(rows)}
     except Exception as exc:  # noqa: BLE001
@@ -1229,7 +1264,7 @@ def ops_sessions() -> dict[str, Any]:
                 "hostname": s.get("computer") or "?",
                 "username": s.get("username") or "?",
                 "os": " ".join(x for x in (s.get("os"), s.get("os_build")) if x),
-                "pid": s.get("pid"), "is_alive": True,
+                "pid": s.get("pid"), "is_alive": _havoc_alive(s),
                 "elevated": s.get("elevated"),
                 "process": s.get("process"),
                 "listener": s.get("listener"),
@@ -1252,7 +1287,7 @@ def ops_sessions() -> dict[str, Any]:
                 "hostname": a.get("a_computer") or "?",
                 "username": a.get("a_username") or "?",
                 "os": a.get("a_os_desc") or "?",
-                "pid": a.get("a_pid"), "is_alive": True,
+                "pid": a.get("a_pid"), "is_alive": _adaptix_alive(a),
                 "elevated": a.get("a_elevated"),
                 "process": a.get("a_process"),
                 "listener": a.get("a_listener"),
@@ -1288,6 +1323,14 @@ def ops_results(backend: str, session_id: str | None = None) -> dict[str, Any]:
             return {"ok": True, "results": cb.meridian_results(session_id)}
         if backend == "mythic":
             return {"ok": True, "results": cb.mythic_task_output(int(session_id))}
+        if backend == "adaptix":
+            # command/raw only QUEUES the AxScript command; the
+            # completed-task list carries the real output.
+            import adaptix_client as ax
+            ac = ax.AdaptixClient()
+            ac.login()
+            return {"ok": True,
+                    "results": ac.completed_tasks(session_id, limit=10)}
         raise HTTPException(status_code=400, detail=f"unsupported backend '{backend}'")
     except cb.BackendError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

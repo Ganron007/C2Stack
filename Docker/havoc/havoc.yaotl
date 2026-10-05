@@ -31,7 +31,7 @@ Listeners {
     Http {
         Name         = "c2stack - http"
         Hosts        = [
-            "192.168.100.1", # victim-facing callback host = the C2Stack redirector
+            "__VICTIM_REDIRECTOR_IP__", # victim-facing callback host = the C2Stack redirector (rendered from $VICTIM_REDIRECTOR_IP by entrypoint.sh; NEVER commit a real IP here)
         ]
         HostBind     = "0.0.0.0"
         HostRotation = "round-robin"

@@ -106,15 +106,16 @@ services:
   havoc:
     build:
       context: ./havoc
+    environment:
+      VICTIM_REDIRECTOR_IP: ${VICTIM_REDIRECTOR_IP:-192.168.100.1}
     volumes:
       - havoc_data:/opt/havoc/teamserver/data
-      # Bind-mount the repo profile OVER the one inside the data volume.
-      # The teamserver runs as `./havoc server -d` with no -profile flag, so it
-      # loads /opt/havoc/teamserver/data/havoc.yaotl - which the named volume
-      # otherwise shadows with a stale copy. That drift is invisible until a
-      # payload is built: the beacon bakes in the listener Hosts, so a stale
-      # profile makes every callback go to the wrong address with no error.
-      - ./havoc/havoc.yaotl:/opt/havoc/teamserver/data/havoc.yaotl:ro
+      # The repo profile is a NEUTRAL template (Hosts holds the
+      # __VICTIM_REDIRECTOR_IP__ token). The entrypoint renders it with the
+      # lab's VICTIM_REDIRECTOR_IP into the data volume at every start, so a
+      # stale volume copy can never silently misdirect beacons again (the
+      # previous failure mode that motivated the old :ro bind-mount).
+      - ./havoc/havoc.yaotl:/templates/havoc.yaotl:ro
     ports:
       - "${HAVOC_TS_PORT}:40056"
     networks:
