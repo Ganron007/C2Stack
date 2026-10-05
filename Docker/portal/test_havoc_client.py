@@ -47,6 +47,30 @@ def frame_for(line, **kw):
     # `task` is teamserver-side (CommandID "Teamserver"), not a Demon JOB.
     ("task list", {"CommandID": "Teamserver", "Command": "task::list"}),
     ("exit thread", {"CommandID": "92", "ExitMethod": "thread"}),
+    # SOCKET takes the full two-word subcommand (demons.go has no default
+    # case — a bare "socks" silently becomes an empty job).
+    ("socks list", {"CommandID": "2540", "Command": "socks list",
+                    "Params": ""}),
+    ("socks add 1080", {"CommandID": "2540", "Command": "socks add",
+                         "Params": "1080"}),
+    ("rportfwd list", {"CommandID": "2540", "Command": "rportfwd list",
+                       "Params": ""}),
+    # rportfwd add joins GUI-style with ";" (ConsoleInput.cc:1600).
+    ("rportfwd add 0.0.0.0 8080 127.0.0.1 80",
+     {"CommandID": "2540", "Command": "rportfwd add",
+      "Params": "0.0.0.0;8080;127.0.0.1;80"}),
+    # PIVOT takes a NUMERIC command (1/10/11 — ConsoleInput.cc:2134+).
+    ("pivot list", {"CommandID": "2520", "Command": "1", "Param": ""}),
+    ("pivot connect WS01 agent-pipe",
+     {"CommandID": "2520", "Command": "10",
+      "Param": "\\\\WS01\\pipe\\agent-pipe"}),
+    ("pivot disconnect abc123",
+     {"CommandID": "2520", "Command": "11", "Param": "abc123"}),
+    # ptt defaults Luid to "0" like the GUI (empty Luid errors teamserver-side).
+    ("ptt QUJD", {"CommandID": "2550", "Command": "ptt", "Ticket": "QUJD",
+                  "Luid": "0"}),
+    ("ptt QUJD /luid 0x3e7", {"CommandID": "2550", "Command": "ptt",
+                              "Luid": "0x3e7"}),
 ])
 def test_run_builds_correct_frame(line, expect):
     info = frame_for(line)
@@ -56,7 +80,10 @@ def test_run_builds_correct_frame(line, expect):
 
 @pytest.mark.parametrize("line", [
     "cp onlyone", "exit nukes", "task explode", "sleep", "token",
-    "upload C:\\x", "config", "net", "cat",
+    "upload C:\\x", "config", "net", "cat", "socks", "socks frobnicate",
+    "rportfwd", "rportfwd add 1 2 3", "pivot", "pivot connect onlyone",
+    "pivot explode", "ptt", "shellcode-inject", "shellcode-inject abc",
+    "dll-inject", "dll-inject abc",
 ])
 def test_run_rejects_bad_input(line):
     with pytest.raises(hv.BackendError):
