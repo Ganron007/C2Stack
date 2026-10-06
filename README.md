@@ -137,14 +137,14 @@ C2Stack ships with an integrated web management and educational portal:
 
 ### 2. Havoc C2 — Windows Endpoint Evasion
 - C++ Demon payload with indirect syscalls, API hashing, in-memory execution, and sleep obfuscation (Ekko/Zilean).
-- Connects to the published teamserver port (`40056`) using the Havoc Qt5 client.
+- Connects to the published teamserver port (`40056`) using the Havoc Qt5 client, **or** fully headlessly via the portal's Operations Console (`/api/ops/havoc/*`): builds, sessions, and the entire command vocabulary (shell, file, process, tokens, `inline-execute`, `dotnet`, `dll-spawn`, `shellcode-*`, `dll-inject`, `socks`, `rportfwd`, `pivot`, `luid`/`klist`/`purge`/`ptt`) run through the browser — no Qt client required.
 
 ### 3. Sliver C2 — General Lateral Movement
 - Feature-rich Go implants supporting Armory extensions, BOFs, and pivot listeners (TCP / SMB).
-- Controlled via `sliver-client` on port `31337`.
+- Controlled via `sliver-client` on port `31337`, or headlessly through the portal (sessions + beacons listed, `execute` tasking, and `generate` via `/api/ops/sliver/*`).
 
 ### 4. Adaptix C2 — Multiplayer Operations
-- Go/C++ post-exploitation framework with a Qt GUI client (`:4321`).
+- Go/C++ post-exploitation framework with a Qt GUI client (`:4321`), **or** headlessly via the REST API (`/agent/...`) that the portal's Operations Console speaks natively.
 - Multi-listener matrix: HTTP/S, DNS/DoH, SMB, TCP Beacon + TCP/mTLS Gopher.
 
 ---

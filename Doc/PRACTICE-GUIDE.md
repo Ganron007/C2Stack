@@ -173,6 +173,19 @@ Styled in C2Stack's signature **Warm Obsidian-Amber** palette (mirroring the log
 - Click **📄 View Logs** on any service card to stream real-time container stdout/stderr output without needing `docker logs` terminal commands.
 - Click **↻ Restart** to gracefully bounce any teamserver.
 
+#### E. Drive Every Framework Live (Tab: Operations Console)
+The two newest tabs add real operational capability on top of the learning views:
+
+- **Operations Console** — a unified live-session table across all five frameworks with per-framework tasking. Select a session, type its native command, and read real output. Preset chips populate valid commands per framework (catalogue-driven, with help tooltips).
+  - `meridian` / `adaptix` queue asynchronously; the console polls and prints the result once the agent ticks.
+  - `sliver` beacons queue (result text is console-only); sessions return full output.
+  - `havoc` / `mythic` return synchronously.
+  - Stale sessions (no check-in within their sleep window) are dimmed with a `STALE` badge and refused on execute, so you never wait on a dead agent.
+- **Lab Config** — every network knob the stack uses (victim-facing C2/redirector IP, gate header, per-framework URI prefixes, control ports, Meridian DNS domain, victim SSH target). Nothing in the lab is hardcoded.
+  - **PORTAL** scope applies immediately (stagers, callback URLs, build defaults).
+  - **STACK** scope writes the real Apache vhost, Meridian listener config and Havoc profile into a shared render volume; after saving, press **Render config for the stack** then restart the named containers.
+  - **Provenance badges** show where each value came from — `OVERRIDDEN`, `ENV`, `FROM STACK` (read back off a live container), or `DEFAULT` — so a stale default can never silently misdirect your implants.
+
 ---
 
 ## 5. Step-by-Step Standalone Setup
@@ -376,6 +389,13 @@ Verify that all service status cards display **● RUNNING** in green.
    Verified 2026-10-04 on win-target: `shell`, `powershell`, `ls/dir/pwd/cat/cp/mv/
    mkdir/rm`, `ps`, `sleep`, `checkin`, `token list/getuid`, `config
    implant.verbose`, `net domain`, `job list`, `task list` (14/14).
+   Extended 2026-10-06: `inline-execute` (BOF), `dotnet` (csc-built assembly),
+   `dll-spawn`, `shellcode-execute` / `-spawn` / `-inject`, `dll-inject`,
+   `transfer list`, `luid`/`klist`/`purge`, `socks` (add/list/kill/clear —
+   a live SOCKS5 relay through the agent), `rportfwd` (add/list/remove/clear),
+   `pivot list`. Only `screenshot` (no desktop on win-target), `ptt`
+   positive (needs a domain ticket) and `pivot connect` (needs an SMB-pipe
+   peer agent) remain blocked on environment, not wire.
    Traps: `CommandID` must be NUMERIC (a string is silently coerced to 0 and
    the task is accepted but never runs); `ls` sends SubCommand `dir` (the
    daemon has no `ls` case); `NetCommand` is numeric (`domain`=1, see

