@@ -339,6 +339,11 @@ class DnsListener(Listener):
     def __init__(self, app, cfg):
         super().__init__(app, cfg)
         self._server: DNSServer | None = None
+        self._ready = threading.Event()
+
+    def start(self) -> None:
+        super().start()
+        self._ready.wait(timeout=3.0)
 
     def _shutdown(self) -> None:
         # Finding #11: the DNSServer thread (and its UDP socket) was never
@@ -362,5 +367,6 @@ class DnsListener(Listener):
         resolver = MeridianResolver(self)
         self._server = DNSServer(resolver, port=self.cfg.port, address=self.cfg.host)
         self._server.start_thread()
+        self._ready.set()
         while self.running:
             time.sleep(0.5)

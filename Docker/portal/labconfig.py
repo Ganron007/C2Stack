@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import threading
 from typing import Any
@@ -329,6 +330,10 @@ def set_overrides(values: dict[str, Any]) -> tuple[dict[str, str], list[str]]:
         if key.endswith("_uri_prefix") and text and not text.startswith("/"):
             errors.append(f"{spec['label']}: must start with '/'")
             continue
+        if key == "c2_header_name" and text:
+            if not re.match(r"^[A-Za-z0-9!#$%&'*+\-.^_`|~]+$", text):
+                errors.append(f"{spec['label']}: must be a valid HTTP header token")
+                continue
         if key == "victim_redirector_ip" and text:
             try:
                 # Accept a hostname too - some labs front the stack with a

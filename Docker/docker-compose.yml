@@ -413,7 +413,7 @@ services:
       ADAPTIX_TS_PORT: ${ADAPTIX_TS_PORT:-4321}
       MYTHIC_UI_PORT: ${MYTHIC_UI_PORT:-7443}
     ports:
-      - "${PORTAL_PORT:-8000}:8000"
+      - "${PORTAL_BIND:-127.0.0.1}:${PORTAL_PORT:-8000}:8000"
     networks:
       - c2_core
       - c2_edge

@@ -22,8 +22,9 @@ PROFILES=()
 NO_BUILD=0
 for arg in "$@"; do
   case "$arg" in
-    --mythic|--all) PROFILES+=(--profile mythic) ;;
-    --adaptix|--all) PROFILES+=(--profile adaptix) ;;
+    --all) PROFILES+=(--profile mythic --profile adaptix) ;;
+    --mythic) PROFILES+=(--profile mythic) ;;
+    --adaptix) PROFILES+=(--profile adaptix) ;;
     --no-build) NO_BUILD=1 ;;
     *) echo "[bootstrap] Unknown argument: $arg" >&2; exit 2 ;;
   esac

@@ -82,6 +82,11 @@ def _httpx_prefix() -> str:
     return os.environ.get("MYTHIC_HTTPX_URI_PREFIX", MYTHIC_HTTPX_PREFIX_DEFAULT)
 
 
+def _escape_regex(val: str) -> str:
+    """Escape regex metacharacters in literal values used in Apache RewriteCond regexes."""
+    return re.sub(r"([.+*?[\]()^$\\])", r"\\\1", val)
+
+
 def _sliver_gate() -> str:
     """The Sliver route's header condition.
 
@@ -95,7 +100,7 @@ def _sliver_gate() -> str:
     if os.environ.get("SLIVER_HEADER_GATE", "on") == "off":
         return r"%{REQUEST_URI} ^/"
     return r"%{HTTP:" + labconfig.get("c2_header_name") + r"} ^" + \
-        labconfig.get("c2_header_value") + r"$ [NC]"
+        _escape_regex(labconfig.get("c2_header_value")) + r"$ [NC]"
 
 
 def render_redirector(template: str) -> str:
@@ -106,7 +111,7 @@ def render_redirector(template: str) -> str:
     """
     values: dict[str, str] = {
         "C2_HEADER_NAME": labconfig.get("c2_header_name"),
-        "C2_HEADER_VALUE": labconfig.get("c2_header_value"),
+        "C2_HEADER_VALUE": _escape_regex(labconfig.get("c2_header_value")),
         "SLIVER_HEADER_GATE": _sliver_gate(),
         "MYTHIC_URI_PREFIX": labconfig.get("mythic_uri_prefix"),
         "MYTHIC_HTTPX_URI_PREFIX": _httpx_prefix(),

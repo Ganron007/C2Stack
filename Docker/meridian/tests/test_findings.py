@@ -521,6 +521,11 @@ def _dns_client(port):
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(5)
+    if hasattr(socket, "SIO_UDP_CONNRESET"):
+        try:
+            sock.ioctl(socket.SIO_UDP_CONNRESET, False)
+        except OSError:
+            pass
 
     def ask(name):
         q = DNSRecord.question(name, "TXT")

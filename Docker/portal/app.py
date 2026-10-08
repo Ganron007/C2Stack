@@ -18,11 +18,29 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+
+
+def verify_operator_auth(request: Request) -> None:
+    """Validate operator authentication for control routes when C2STACK_API_KEY is configured."""
+    api_key = os.environ.get("C2STACK_API_KEY") or os.environ.get("PORTAL_API_KEY")
+    if not api_key:
+        return
+    token = request.headers.get("X-API-Key")
+    if not token:
+        auth_hdr = request.headers.get("Authorization", "")
+        if auth_hdr.startswith("Bearer "):
+            token = auth_hdr[7:].strip()
+    if not token or token != api_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized: invalid or missing operator API key (provide X-API-Key or Authorization: Bearer <key>)",
+        )
+
 
 app = FastAPI(
     title="C2Stack Flight Control",
@@ -381,7 +399,7 @@ def ops_havoc_listeners() -> dict[str, Any]:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-@app.post("/api/ops/havoc/build")
+@app.post("/api/ops/havoc/build", dependencies=[Depends(verify_operator_auth)])
 def ops_havoc_build(req: HavocBuildRequest) -> dict[str, Any]:
     """Build a Demon payload server-side. No Qt client involved.
 
@@ -404,15 +422,32 @@ def ops_havoc_build(req: HavocBuildRequest) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-@app.get("/api/ops/havoc/task")
+class HavocTaskRequest(BaseModel):
+    demon_id: str = Field(..., description="Demon session ID")
+    command: str = Field(..., description="Console command to execute")
+    wait: int = Field(25, description="Seconds to wait for Demon beacon output")
+
+
+@app.post("/api/ops/havoc/task", dependencies=[Depends(verify_operator_auth)])
+def ops_havoc_task_post(req: HavocTaskRequest) -> dict[str, Any]:
+    """Task a Havoc session directly via POST."""
+    import havoc_client as hv
+    try:
+        return {"ok": True, "result": hv._run(
+            hv.HavocClient().task(req.demon_id, req.command, wait=float(req.wait)))}
+    except (cb.BackendError, hv.BackendError, OSError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/ops/havoc/task", deprecated=True, dependencies=[Depends(verify_operator_auth)])
 def ops_havoc_task(demon_id: str, command: str,
                    wait: int = 25) -> dict[str, Any]:
-    """Task a Havoc session directly (the /api/ops/task path also covers this)."""
+    """Task a Havoc session directly (deprecated GET: prefer POST /api/ops/havoc/task)."""
     import havoc_client as hv
     try:
         return {"ok": True, "result": hv._run(
             hv.HavocClient().task(demon_id, command, wait=float(wait)))}
-    except cb.BackendError as exc:
+    except (cb.BackendError, hv.BackendError, OSError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
@@ -493,7 +528,7 @@ def _mythic_http_c2() -> dict[str, Any]:
     }
 
 
-@app.post("/api/ops/mythic/build")
+@app.post("/api/ops/mythic/build", dependencies=[Depends(verify_operator_auth)])
 def ops_mythic_build(req: MythicBuildRequest) -> dict[str, Any]:
     """Submit an Apollo build. Returns immediately with the payload uuid.
 
@@ -596,7 +631,7 @@ def ops_mythic_payload(uuid: str):
         headers={"Content-Disposition": f'attachment; filename="apollo-{uuid}.bin"'})
 
 
-@app.post("/api/ops/mythic/upload")
+@app.post("/api/ops/mythic/upload", dependencies=[Depends(verify_operator_auth)])
 async def ops_mythic_upload(request: Request) -> dict[str, Any]:
     """Stage an operator file (e.g. a COFF .o) in Mythic for tasking.
 
@@ -639,7 +674,7 @@ async def ops_mythic_upload(request: Request) -> dict[str, Any]:
             "filename": filename, "size": len(content)}
 
 
-@app.post("/api/ops/sliver/generate")
+@app.post("/api/ops/sliver/generate", dependencies=[Depends(verify_operator_auth)])
 def ops_sliver_generate(req: SliverGenerateRequest) -> dict[str, Any]:
     """Build a Sliver implant server-side (garble compile, ~40s+).
 
@@ -735,6 +770,45 @@ async def serve_index() -> Any:
     return HTMLResponse("<h1>C2Stack Portal Dashboard</h1><p>Static index.html not found.</p>")
 
 
+def _find_service_container(
+    docker_containers: list[dict[str, Any]],
+    service_name: str,
+    project_name: str | None = None,
+) -> dict[str, Any] | None:
+    """Identify container by Compose service/project labels and canonical names.
+
+    Prevents cross-project collisions where similarly named containers or
+    substring matches (e.g. 'other-project-sliver-1') would otherwise be selected.
+    """
+    target_svc = service_name.lower()
+    project_env = (project_name or os.environ.get("COMPOSE_PROJECT_NAME") or "c2stack").lower()
+
+    # Pass 1: exact match on com.docker.compose.service AND matching com.docker.compose.project
+    for c in docker_containers:
+        labels = c.get("Labels") or {}
+        lbl_svc = str(labels.get("com.docker.compose.service", "")).lower()
+        lbl_prj = str(labels.get("com.docker.compose.project", "")).lower()
+        if lbl_svc == target_svc:
+            if not lbl_prj or lbl_prj == project_env:
+                return c
+
+    # Pass 2: exact match on com.docker.compose.service label
+    for c in docker_containers:
+        labels = c.get("Labels") or {}
+        if str(labels.get("com.docker.compose.service", "")).lower() == target_svc:
+            return c
+
+    # Pass 3: canonical compose naming /<project>_<service>_<index> or /<project>-<service>-<index>
+    for c in docker_containers:
+        for raw_name in c.get("Names", []):
+            name = raw_name.lstrip("/").lower()
+            parts = name.replace("-", "_").split("_")
+            if target_svc in parts and (not project_env or project_env in parts):
+                return c
+
+    return None
+
+
 @app.get("/api/status")
 def get_status() -> dict[str, Any]:
     """Return health, published ports, and container states across the stack."""
@@ -751,22 +825,25 @@ def get_status() -> dict[str, Any]:
 
     services_status = {}
     for svc, meta in _ports().items():
-        # Match against the docker container map. Compose service names appear as
-        # "<project>-<service>-<n>", so prefer the exact "<prefix>-<svc>" segment
-        # over a bare substring test: "mythic" also occurs inside
-        # "c2stack-mythic_postgres-1", which made the Mythic card report the
-        # database container (and its logs) instead of the server.
         matched_container = None
-        exact = f"-{svc}-"
-        for cname, cinfo in container_map.items():
-            if exact in cname:
-                matched_container = cinfo
-                break
-        if matched_container is None:
+        target_c = _find_service_container(docker_containers, svc)
+        if target_c:
+            matched_container = {
+                "id": str(target_c.get("Id", ""))[:12],
+                "state": target_c.get("State", "unknown").lower(),
+                "status": target_c.get("Status", ""),
+            }
+        else:
+            exact = f"-{svc}-"
             for cname, cinfo in container_map.items():
-                if svc in cname:
+                if exact in cname:
                     matched_container = cinfo
                     break
+            if matched_container is None:
+                for cname, cinfo in container_map.items():
+                    if svc in cname:
+                        matched_container = cinfo
+                        break
 
         # Check port reachability (published host ports only; string values
         # like "via redirector :80" describe internal bindings and are skipped)
@@ -810,7 +887,7 @@ def get_status() -> dict[str, Any]:
     }
 
 
-@app.post("/api/containers/{service_name}/action")
+@app.post("/api/containers/{service_name}/action", dependencies=[Depends(verify_operator_auth)])
 def container_action(service_name: str, action: str) -> dict[str, Any]:
     """Execute lifecycle action (start/stop/restart) on a C2Stack container."""
     clean_target = service_name.lower()
@@ -820,19 +897,13 @@ def container_action(service_name: str, action: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=f"unknown service '{service_name}'")
 
     docker_containers = get_docker_containers()
-    target_id = None
-    for c in docker_containers:
-        for name in c.get("Names", []):
-            if clean_target in name.lower():
-                target_id = c.get("Id")
-                break
-        if target_id:
-            break
+    target_c = _find_service_container(docker_containers, clean_target)
+    target_id = target_c.get("Id") if target_c else None
 
     if not target_id:
         return {
-            "status": "mock",
-            "message": f"Action '{action}' simulated for '{service_name}' (Container not found).",
+            "status": "unavailable",
+            "message": f"Container for service '{service_name}' not found",
             "service": service_name,
         }
 
@@ -844,19 +915,14 @@ def container_action(service_name: str, action: str) -> dict[str, Any]:
 def container_logs(service_name: str, tail: int = 100) -> dict[str, Any]:
     """Fetch logs from container via Docker socket or CLI."""
     docker_containers = get_docker_containers()
-    target_id = None
     clean_target = service_name.lower()
-    for c in docker_containers:
-        for name in c.get("Names", []):
-            if clean_target in name.lower():
-                target_id = c.get("Id")
-                break
-        if target_id:
-            break
+    target_c = _find_service_container(docker_containers, clean_target)
+    target_id = target_c.get("Id") if target_c else None
 
     if not target_id:
         return {
             "service": service_name,
+            "status": "unavailable",
             "logs": f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] Service '{service_name}' container not currently found in docker ps.",
         }
 
@@ -1353,7 +1419,7 @@ def _observe_live_stack() -> dict[str, str]:
     return found
 
 
-@app.post("/api/config/apply")
+@app.post("/api/config/apply", dependencies=[Depends(verify_operator_auth)])
 def apply_lab_config() -> dict[str, Any]:
     """Render the sibling containers' config files from the current settings.
 
@@ -1402,7 +1468,7 @@ def get_rendered_configs() -> dict[str, Any]:
     return {"ok": True, "rendered": out}
 
 
-@app.post("/api/config")
+@app.post("/api/config", dependencies=[Depends(verify_operator_auth)])
 def update_lab_config(req: LabConfigUpdate) -> dict[str, Any]:
     """Persist lab settings from the UI.
 
@@ -1452,7 +1518,7 @@ def download_lab_env() -> Response:
     )
 
 
-@app.post("/api/ops/task")
+@app.post("/api/ops/task", dependencies=[Depends(verify_operator_auth)])
 def ops_task(req: TaskRequest) -> dict[str, Any]:
     """Queue a real command against a live session, on any backend.
 
@@ -1681,7 +1747,7 @@ def ops_probe(req: RedirectorTestRequest) -> dict[str, Any]:
     return cb.probe_redirector(req.url_path, req.headers, req.method)
 
 
-@app.post("/api/ops/victim")
+@app.post("/api/ops/victim", dependencies=[Depends(verify_operator_auth)])
 def ops_victim(req: VictimCommandRequest) -> dict[str, Any]:
     """Run a command on the victim target over SSH."""
     result = cb.victim_exec(req.command, timeout=req.timeout)
@@ -1690,7 +1756,7 @@ def ops_victim(req: VictimCommandRequest) -> dict[str, Any]:
     return result
 
 
-@app.post("/api/ops/adaptix/listener")
+@app.post("/api/ops/adaptix/listener", dependencies=[Depends(verify_operator_auth)])
 def ops_adaptix_listener(req: AdaptixListenerRequest) -> dict[str, Any]:
     """Create/ensure the Adaptix HTTP Beacon listener via the REST API."""
     import adaptix_client as ax
@@ -1713,7 +1779,7 @@ def ops_adaptix_listener(req: AdaptixListenerRequest) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-@app.post("/api/ops/adaptix/agent")
+@app.post("/api/ops/adaptix/agent", dependencies=[Depends(verify_operator_auth)])
 def ops_adaptix_agent(req: AdaptixAgentRequest) -> dict[str, Any]:
     """Build a Windows beacon server-side and return base64 for download."""
     import adaptix_client as ax
@@ -1741,7 +1807,7 @@ def ops_adaptix_agents() -> dict[str, Any]:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-@app.post("/api/ops/adaptix/task")
+@app.post("/api/ops/adaptix/task", dependencies=[Depends(verify_operator_auth)])
 def ops_adaptix_task(req: AdaptixTaskRequest) -> dict[str, Any]:
     """Task an Adaptix agent. Runs server-side via the AxScript engine."""
     import adaptix_client as ax

@@ -2,6 +2,27 @@
    C2Stack Flight Control — Interactive Visualizer & Controller Engine
    ========================================================================== */
 
+function esc(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Transparently attach X-API-Key if stored in session or local storage
+const _rawFetch = window.fetch;
+window.fetch = function(url, init) {
+  init = init || {};
+  const key = sessionStorage.getItem('c2stack_api_key') || localStorage.getItem('c2stack_api_key');
+  if (key && typeof url === 'string' && url.startsWith('/api/')) {
+    init.headers = Object.assign({}, init.headers, { 'X-API-Key': key });
+  }
+  return _rawFetch.call(this, url, init);
+};
+
 document.addEventListener('DOMContentLoaded', () => {
   initTabs();
   initStatusHUD();
@@ -370,28 +391,33 @@ async function initFleetRadar() {
   async function fetchFleet() {
     try {
       // /api/ops/sessions queries every framework readable headlessly and
-      // reports each backend's status separately. The old /api/sessions only
-      // knew Mythic + Meridian and invented hosts when they were unreachable.
+      // reports each backend's status separately.
       const res = await fetch('/api/ops/sessions');
+      const data = await res.json();
       const down = Object.entries(data.backends || {})
         .filter(([, v]) => !v.ok)
         .map(([k, v]) => k + ': ' + (v.error || 'unreachable'));
-      if (!(data.sessions || []).length && !down.length) {
-        tbody.innerHTML = '<tr><td colspan=\"7\" class=\"empty-row\">' +
-          'All backends answered and none reported a live session.</td></tr>';
-      }
-      const data = await res.json();
       tbody.innerHTML = '';
+      if (!(data.sessions || []).length && !down.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-row">' +
+          'All backends answered and none reported a live session.</td></tr>';
+        return;
+      }
       (data.sessions || []).forEach(sess => {
         const tr = document.createElement('tr');
+        const isAlive = sess.is_alive !== false;
+        const badge = isAlive
+          ? '<span class="status-badge running">● ALIVE</span>'
+          : '<span class="status-badge warn" title="no check-in within framework window">STALE</span>';
+        const procText = [sess.process, sess.pid ? 'pid ' + sess.pid : ''].filter(Boolean).join(' / ') || '-';
         tr.innerHTML = `
-          <td><code>${sess.id}</code></td>
-          <td><strong style="color:var(--crimson-glow);">${sess.backend.toUpperCase()}</strong></td>
-          <td>${sess.hostname}</td>
-          <td><code>${sess.username}</code></td>
-          <td>${sess.transport}</td>
-          <td>${(sess.process || sess.pid) ? (sess.process || '') + ' pid ' + (sess.pid || '?') : '-'}</td>
-          <td><span class="status-badge running">● ALIVE</span></td>
+          <td><code>${esc(sess.id)}</code></td>
+          <td><strong style="color:var(--crimson-glow);">${esc(sess.backend ? sess.backend.toUpperCase() : '')}</strong></td>
+          <td>${esc(sess.hostname || '-')}</td>
+          <td><code>${esc(sess.username || '-')}</code></td>
+          <td>${esc(sess.transport || '-')}</td>
+          <td>${esc(procText)}</td>
+          <td>${badge}</td>
         `;
         tbody.appendChild(tr);
       });
@@ -401,11 +427,11 @@ async function initFleetRadar() {
       down.forEach(msg => {
         const tr = document.createElement('tr');
         tr.innerHTML = '<td colspan="7" style="color:var(--crimson-glow);">' +
-          'backend unavailable - ' + msg + '</td>';
+          'backend unavailable - ' + esc(msg) + '</td>';
         tbody.appendChild(tr);
       });
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="7" style="color:var(--crimson-glow);">Error loading fleet sessions: ${err.message}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" style="color:var(--crimson-glow);">Error loading fleet sessions: ${esc(err.message)}</td></tr>`;
     }
   }
 
@@ -461,16 +487,16 @@ function opsRenderChips(backends) {
     if (!info) {
       chip.className = 'backend-chip down';
       chip.innerHTML = '<span class="dot"></span><span class="name">' +
-        name + '</span><span class="detail">not reported</span>';
+        esc(name) + '</span><span class="detail">not reported</span>';
     } else if (info.ok) {
       chip.className = 'backend-chip ok';
-      chip.innerHTML = '<span class="dot"></span><span class="name">' + name +
+      chip.innerHTML = '<span class="dot"></span><span class="name">' + esc(name) +
         '</span><span class="detail">' + (info.count || 0) + ' session(s)</span>';
     } else {
       chip.className = 'backend-chip down';
-      chip.innerHTML = '<span class="dot"></span><span class="name">' + name +
-        '</span><span class="detail" title="' + (info.error || '').replace(/"/g, '&quot;') +
-        '">' + (info.error || 'unreachable') + '</span>';
+      chip.innerHTML = '<span class="dot"></span><span class="name">' + esc(name) +
+        '</span><span class="detail" title="' + esc(info.error || '') +
+        '">' + esc(info.error || 'unreachable') + '</span>';
     }
     wrap.appendChild(chip);
   });
@@ -499,10 +525,10 @@ function opsRenderSessions(sessions) {
     const stale = s.is_alive === false;
     tr.className += stale ? ' stale' : '';
     tr.innerHTML =
-      '<td><span class="fw-tag">' + (s.backend || '?').toUpperCase() + '</span></td>' +
-      '<td>' + (s.hostname || '?') + (s.transport ? ' <small>(' + s.transport + ')</small>' : '') + '</td>' +
-      '<td><code>' + (s.username || '?') + '</code></td>' +
-      '<td><code>' + (proc || '?') + '</code>' +
+      '<td><span class="fw-tag">' + esc((s.backend || '?').toUpperCase()) + '</span></td>' +
+      '<td>' + esc(s.hostname || '?') + (s.transport ? ' <small>(' + esc(s.transport) + ')</small>' : '') + '</td>' +
+      '<td><code>' + esc(s.username || '?') + '</code></td>' +
+      '<td><code>' + esc(proc) + '</code>' +
       (stale ? ' <span class="status-badge warn" title="no check-in within the framework sleep window">STALE</span>' : '') + '</td>' +
       '<td><button class="btn btn-outline-success btn-sm">Select</button></td>';
     tr.querySelector('button').addEventListener('click', () => opsSelect(s, tr));
@@ -517,11 +543,11 @@ function opsSelect(session, row) {
 
   const target = document.getElementById('ops-target');
   target.className = 'ops-target';
-  target.innerHTML = '<span class="fw-tag">' + session.backend.toUpperCase() +
-    '</span><strong>' + (session.hostname || '?') + '</strong> &middot; ' +
-    (session.username || '?') +
-    (session.process ? ' &middot; ' + session.process : '') +
-    '<br><small>session id: ' + session.id + '</small>';
+  target.innerHTML = '<span class="fw-tag">' + esc((session.backend || '').toUpperCase()) +
+    '</span><strong>' + esc(session.hostname || '?') + '</strong> &middot; ' +
+    esc(session.username || '?') +
+    (session.process ? ' &middot; ' + esc(session.process) : '') +
+    '<br><small>session id: ' + esc(session.id) + '</small>';
 
   // Presets are framework-specific; showing another framework's syntax would
   // just produce "unknown command" errors. The live catalogue

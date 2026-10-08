@@ -110,11 +110,18 @@ def test_redirector_reflects_configured_header():
 
 
 def test_header_value_with_regex_and_dollar_chars():
-    """str.replace, not re.sub: a replacement containing $ or \\ is legal in a
-    header value and would otherwise corrupt or explode the render."""
+    """Literal $ and \\ in a header value are escaped for Apache RewriteCond
+    so they retain literal meaning rather than regex behavior."""
     labconfig.set_overrides({"c2_header_value": "a$b\\c"})
     out = lagrender.render_redirector(VHOST)
-    assert "^a$b\\c$ [NC]" in out
+    assert r"^a\$b\\c$ [NC]" in out
+
+
+def test_header_value_escapes_literal_dots():
+    """Dots in header values must be escaped so they don't match arbitrary chars in Apache."""
+    labconfig.set_overrides({"c2_header_value": "literal.review"})
+    out = lagrender.render_redirector(VHOST)
+    assert r"^literal\.review$ [NC]" in out
 
 
 def _sliver_gate_line(rendered: str) -> str:

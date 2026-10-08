@@ -7,7 +7,7 @@ vendored tree keeps its upstream license text intact in the repository.
 |---|---|---|---|---|
 | **Havoc** | https://github.com/HavocFramework/Havoc | GPL-3.0 | Source vendored and built by `Docker/havoc/Dockerfile` | `Docker/havoc/src/` (upstream `LICENSE` preserved) |
 | **Adaptix** | https://github.com/Adaptix-Framework/AdaptixC2 | GPL-3.0 | Source vendored and built by `Docker/adaptix/Dockerfile` | `Docker/adaptix/src/` (upstream `LICENSE` preserved) |
-| **Sliver** | https://github.com/BishopFox/sliver | GPL-3.0 | Official `v1.7.6` release binaries, downloaded *at build time* (SHA-256 pinned); the binaries are **not** committed to this repo | `Docker/sliver/Dockerfile` |
+| **Sliver** | https://github.com/BishopFox/sliver | GPL-3.0 | Official `v1.7.7` release binaries, downloaded *at build time* (SHA-256 pinned); the binaries are **not** committed to this repo | `Docker/sliver/Dockerfile` |
 | **Mythic** | https://github.com/its-a-feature/Mythic | BSD-3-Clause | Prebuilt upstream images referenced by compose (`ghcr.io/its-a-feature/mythic_server`, postgres, rabbitmq); nothing vendored | `Docker/docker-compose.yml`, `Docker/mythic/README.md` |
 | **Meridian** | https://github.com/s1d9e/meridian | MIT | Python server + Go implant (`parallax`) created by s1d9e, vendored in-tree | `Docker/meridian/` (upstream `README.md` / `SECURITY.md` preserved) |
 | **C2Stack original code** | (this repo) | MIT License with Commons Clause | Root `LICENSE` | `LICENSE` |

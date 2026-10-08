@@ -212,3 +212,14 @@ def test_atomic_write_leaves_no_temp_file():
     assert not os.path.exists(path + ".tmp")
     with io.open(path, encoding="utf-8") as fh:
         assert json.load(fh)["c2_header_name"] == "X-Lab"
+
+
+def test_c2_header_name_token_validation():
+    applied, errors = labconfig.set_overrides({"c2_header_name": "X-Custom_Header.1"})
+    assert errors == []
+    assert applied["c2_header_name"] == "X-Custom_Header.1"
+
+    applied, errors = labconfig.set_overrides({"c2_header_name": "Invalid Header Name!"})
+    # Space and exclamation mark are invalid in standard header token
+    assert applied == {}
+    assert any("valid HTTP header token" in e for e in errors)
