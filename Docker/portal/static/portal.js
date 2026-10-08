@@ -14,13 +14,38 @@ function esc(str) {
 
 // Transparently attach X-API-Key if stored in session or local storage
 const _rawFetch = window.fetch;
-window.fetch = function(url, init) {
+window.fetch = async function(input, init) {
   init = init || {};
-  const key = sessionStorage.getItem('c2stack_api_key') || localStorage.getItem('c2stack_api_key');
-  if (key && typeof url === 'string' && url.startsWith('/api/')) {
-    init.headers = Object.assign({}, init.headers, { 'X-API-Key': key });
+  let key = sessionStorage.getItem('c2stack_api_key') || localStorage.getItem('c2stack_api_key');
+  const requestUrl = typeof input === 'string' ? input : (input && input.url ? input.url : '');
+
+  function attachKey(headers, token) {
+    if (typeof Headers !== 'undefined' && headers instanceof Headers) {
+      if (!headers.has('X-API-Key')) headers.set('X-API-Key', token);
+      return headers;
+    } else if (Array.isArray(headers)) {
+      headers.push(['X-API-Key', token]);
+      return headers;
+    } else {
+      return Object.assign({}, headers, { 'X-API-Key': token });
+    }
   }
-  return _rawFetch.call(this, url, init);
+
+  if (key && (requestUrl.startsWith('/api/') || requestUrl.includes('/api/'))) {
+    init.headers = attachKey(init.headers, key);
+  }
+
+  const res = await _rawFetch.call(this, input, init);
+  if (res.status === 401 && (requestUrl.startsWith('/api/') || requestUrl.includes('/api/')) && typeof window.prompt === 'function') {
+    const entered = window.prompt('Operator API Key required for C2Stack control plane:');
+    if (entered) {
+      key = entered.trim();
+      sessionStorage.setItem('c2stack_api_key', key);
+      init.headers = attachKey(init.headers, key);
+      return _rawFetch.call(this, input, init);
+    }
+  }
+  return res;
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -387,12 +412,14 @@ async function initPayloadStudio() {
 // ==========================================================================
 async function initFleetRadar() {
   const tbody = document.getElementById('fleet-tbody');
+  if (!tbody) return;
 
   async function fetchFleet() {
     try {
       // /api/ops/sessions queries every framework readable headlessly and
       // reports each backend's status separately.
       const res = await fetch('/api/ops/sessions');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
       const down = Object.entries(data.backends || {})
         .filter(([, v]) => !v.ok)

@@ -8,7 +8,6 @@ was unreachable, which made the UI lie about the lab's state.
 
 from __future__ import annotations
 
-import http.client
 import json
 import os
 import socket
@@ -278,7 +277,6 @@ def probe_redirector(path: str, headers: dict[str, str] | None = None,
     """
     url = f"http://{REDIRECTOR_HOST}:{REDIRECTOR_PORT}{path if path.startswith('/') else '/' + path}"
     req = urllib.request.Request(url, headers=headers or {}, method=method)
-    started = os.times()
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             body = resp.read()

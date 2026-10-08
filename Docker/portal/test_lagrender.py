@@ -174,9 +174,9 @@ def test_sliver_gate_on_is_also_always_true():
 def test_meridian_config_carries_configured_domain():
     labconfig.set_overrides({"meridian_dns_domain": "c3.example.org"})
     cfg = lagrender.render_meridian()
-    domains = {l["domain"] for l in cfg["listeners"]}
+    domains = {entry["domain"] for entry in cfg["listeners"]}
     assert domains == {"c3.example.org"}
-    assert {l["transport"] for l in cfg["listeners"]} == {"http", "dns"}
+    assert {entry["transport"] for entry in cfg["listeners"]} == {"http", "dns"}
 
 
 def test_havoc_profile_substitutes_and_reflects_config():

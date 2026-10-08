@@ -7,20 +7,20 @@ routing, dissects DNS TXT covert channels, and provides cross-framework payload 
 from __future__ import annotations
 
 import base64
+import hmac
 import http.client
 import json
 import os
 import re
 import socket
 import subprocess
-import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -35,7 +35,7 @@ def verify_operator_auth(request: Request) -> None:
         auth_hdr = request.headers.get("Authorization", "")
         if auth_hdr.startswith("Bearer "):
             token = auth_hdr[7:].strip()
-    if not token or token != api_key:
+    if not token or not hmac.compare_digest(token, api_key):
         raise HTTPException(
             status_code=401,
             detail="Unauthorized: invalid or missing operator API key (provide X-API-Key or Authorization: Bearer <key>)",
@@ -1740,7 +1740,7 @@ def ops_results(backend: str, session_id: str | None = None) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-@app.post("/api/ops/probe")
+@app.post("/api/ops/probe", dependencies=[Depends(verify_operator_auth)])
 def ops_probe(req: RedirectorTestRequest) -> dict[str, Any]:
     """Actually probe the redirector. Reports the REAL status, byte length and
     whether the decoy was returned."""

@@ -4,7 +4,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 import labconfig
-import lagrender
 from app import _havoc_fields, _vhost_fields, app
 
 client = TestClient(app)
@@ -248,7 +247,6 @@ def test_rendered_endpoint_reports_missing_gracefully():
 
 
 def test_container_action_unavailable_when_missing(monkeypatch):
-    from app import get_docker_containers
     monkeypatch.setattr("app.get_docker_containers", lambda: [])
     r = client.post("/api/containers/sliver/action?action=restart")
     assert r.status_code == 200
@@ -290,6 +288,19 @@ def test_operator_auth_enforcement(monkeypatch):
     r = client.post("/api/config", json={"values": {"c2_header_value": "tok"}})
     assert r.status_code == 401
     assert "unauthorized" in r.json()["detail"].lower()
+
+    # Unauthenticated probe request must fail with 401
+    r_probe = client.post("/api/ops/probe", json={"url_path": "/", "headers": {}, "method": "GET"})
+    assert r_probe.status_code == 401
+    assert "unauthorized" in r_probe.json()["detail"].lower()
+
+    # Tampered / mismatched key must fail with 401
+    r_bad = client.post(
+        "/api/config",
+        json={"values": {"c2_header_value": "tok"}},
+        headers={"X-API-Key": "wrong-key"},
+    )
+    assert r_bad.status_code == 401
 
     # Valid X-API-Key must succeed
     r = client.post(
