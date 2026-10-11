@@ -403,6 +403,11 @@ services:
       VICTIM_SSH_KEY: /root/.ssh/victim-key
       MERIDIAN_URI_PREFIX: ${MERIDIAN_URI_PREFIX:-/gateway/v1/telemetry}
       SLIVER_URI_PREFIX: ${SLIVER_URI_PREFIX:-/cloud/storage/objects}
+      # The portal is the vhost RENDERER, so the gate switch must live in
+      # its env (the redirector only ever reads the rendered file). Default
+      # "off" = path-only: a vanilla Sliver implant cannot carry the gate
+      # header, so "on" would silently block the whole Sliver route.
+      SLIVER_HEADER_GATE: ${SLIVER_HEADER_GATE:-off}
       HAVOC_URI_PREFIX: ${HAVOC_URI_PREFIX:-/edge/cache/assets}
       ADAPTIX_URI_PREFIX: ${ADAPTIX_URI_PREFIX:-/api/v1/sync}
       MYTHIC_URI_PREFIX: ${MYTHIC_URI_PREFIX:-/cdn/media/stream}

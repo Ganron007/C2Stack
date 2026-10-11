@@ -93,14 +93,20 @@ def _sliver_gate() -> str:
     Sliver's HTTP implant sends no custom headers (its beacon is just
     `<prefix>/<session-id>`), so requiring the C2 header there silently
     blocked every Sliver request while looking correctly configured. The
-    always-true branch is used instead. The ON branch must ALSO be
-    always-true - a previous version tested for a header no request carries,
-    which made the route match nothing.
+    always-true condition is therefore the default. A previous version
+    gated the route on a header no vanilla request carries, which made
+    the route match nothing (observed 2026-10-11: implant ESTABLISHED on
+    the redirector, zero Sliver sessions).
+
+    The default is OFF (path-only): a vanilla Sliver implant can never
+    carry the gate header, so gating the route on it guarantees silence.
+    Set SLIVER_HEADER_GATE=on only if you run a header-aware implant that
+    sends the C2 header on the Sliver route.
     """
-    if os.environ.get("SLIVER_HEADER_GATE", "on") == "off":
-        return r"%{REQUEST_URI} ^/"
-    return r"%{HTTP:" + labconfig.get("c2_header_name") + r"} ^" + \
-        _escape_regex(labconfig.get("c2_header_value")) + r"$ [NC]"
+    if os.environ.get("SLIVER_HEADER_GATE", "off") == "on":
+        return r"%{HTTP:" + labconfig.get("c2_header_name") + r"} ^" + \
+            _escape_regex(labconfig.get("c2_header_value")) + r"$ [NC]"
+    return r"%{REQUEST_URI} ^/"
 
 
 def render_redirector(template: str) -> str:
