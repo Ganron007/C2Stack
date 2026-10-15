@@ -106,6 +106,10 @@ exit /b 0
         if ($null -eq $currentVolumeExists) { Remove-Item Env:DOCKER_VOLUME_EXISTS -ErrorAction SilentlyContinue }
         else { $env:DOCKER_VOLUME_EXISTS = $currentVolumeExists }
     }
+    # The second bootstrap invocation is expected to return nonzero for the
+    # initialized-volume safety check. Do not leak that child exit code as the
+    # result of this successful test script on Windows CI.
+    $global:LASTEXITCODE = 0
     Write-Output "PowerShell bootstrap argument and secret checks passed"
 }
 finally {
