@@ -100,6 +100,56 @@ v4 bundles C2 profiles inside the server image, but the RC tags are marked
 running RC software. When v4 goes GA, the upgrade path is: swap the server
 image pin, drop the `mythic_http` service, and profiles register automatically.
 
+## Data-preserving credential rotation
+
+MYTHIC_ADMIN_PASSWORD, MYTHIC_DB_PASSWORD, and MYTHIC_RABBITMQ_PASSWORD are
+persistent credentials. Editing .env alone does not change the password stored
+in an initialized Mythic account, PostgreSQL role, or RabbitMQ user. Rotate
+each backend credential in place, update the ignored runtime config, then
+recreate the clients. Keep the named volumes: do not run docker compose down -v
+or remove mythic_postgres during rotation.
+
+1. Keep the API and broker reachable only from the trusted lab while rotating.
+   Save a PostgreSQL custom-format dump, .env, and the generated Apollo config
+   in an access-restricted backup location. Confirm the dump with pg_restore
+   --list before changing anything.
+2. Generate three independent random values (at least 32 random bytes each)
+   and update the matching entries in the ignored Docker/.env. Never commit
+   .env or mythic/apollo/rabbitmq_config.generated.json.
+3. Change the Mythic operator password through the authenticated
+   POST /api/v1.4/update_operator_password_webhook endpoint. Supply the
+   operator's user ID and current password, and preserve the existing email
+   field. Verify a new POST /auth login before proceeding.
+4. Change the PostgreSQL role in place. For an interactive session, run
+   docker exec -it c2stack-mythic_postgres-1 psql -U mythic_user -d mythic_db
+   and then \password mythic_user; enter the new value at the prompts. Change
+   the RabbitMQ user in place using rabbitmqctl change_password with
+   mythic_user and the new password as arguments. Supply the broker value
+   through a protected, non-logged input path rather than putting it in shell
+   history or a checked-in script.
+5. Re-render Apollo's ignored runtime config from .env by running
+   .\docker-bootstrap.ps1 -Mythic -NoBuild on Windows or
+   ./docker-bootstrap.sh --mythic --no-build on Linux/macOS. These bootstrap scripts
+   preserve non-empty credentials and render the broker password into Apollo's
+   runtime config.
+6. Recreate the Mythic services so every client reloads the new values:
+
+       docker compose --env-file .env --profile mythic up -d --force-recreate mythic_postgres mythic_rabbitmq mythic_server mythic_apollo mythic_http mythic_httpx portal
+
+7. Verify the server is healthy, authenticate to PostgreSQL and RabbitMQ with
+   the new values, log in to Mythic, and confirm Apollo plus the configured C2
+   profiles are registered. Keep the protected backup until all checks pass.
+
+### TLS before external exposure
+
+The published Mythic API on MYTHIC_UI_PORT is plain HTTP, and its Compose
+mapping binds the host port on all interfaces unless the deployment changes
+that mapping. Do not expose this port directly to an untrusted network. Before
+external access, keep the API behind a TLS-terminating proxy with a certificate
+whose SAN matches the deployment's real DNS name; verify the chain and hostname
+from a client outside the Docker network. The Havoc and Adaptix internal TLS
+identities do not provide TLS for Mythic's REST API.
+
 ## Env
 
 - `MYTHIC_UI_PORT` — host port for the REST API (default 7443).
