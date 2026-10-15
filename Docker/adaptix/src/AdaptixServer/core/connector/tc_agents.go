@@ -252,13 +252,13 @@ func (tc *TsConnector) TcAgentCommandRaw(ctx *gin.Context) {
 		return
 	}
 
-	err = tc.teamserver.TsAxScriptParseAndExecute(rawData.AgentId, username, rawData.CmdLine)
+	taskID, err := tc.teamserver.TsAxScriptParseAndExecute(rawData.AgentId, username, rawData.CmdLine)
 	if err != nil {
 		ctx.JSON(http.StatusOK, gin.H{"message": err.Error(), "ok": false})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{"message": "", "ok": true})
+	ctx.JSON(http.StatusOK, gin.H{"message": "", "ok": true, "task_id": taskID})
 }
 
 type AgentRemove struct {

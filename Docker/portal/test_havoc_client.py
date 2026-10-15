@@ -9,6 +9,8 @@ execution against a real Demon is tracked separately (matrix section 4.3).
 import asyncio
 import base64
 import json
+import re
+from datetime import datetime
 
 import pytest
 
@@ -26,6 +28,63 @@ def frame_for(line, **kw):
     client._collect = fake_collect
     asyncio.run(client.run("ABC123", line, wait=1, **kw))
     return captured
+
+
+@pytest.mark.parametrize("task_id", [None, "00ABC124", "00ABC123"])
+def test_output_requires_exact_task_id(task_id):
+    client = hv.HavocClient()
+    seen = []
+
+    async def fake_session(on_frame, *, request_frame, idle_timeout, hard_deadline):
+        info = {
+            "DemonID": "ABC123",
+            "CommandID": "4112",
+            "Output": base64.b64encode(b"output").decode(),
+        }
+        if task_id is not None:
+            info["TaskID"] = task_id
+        on_frame({
+            "Head": {"Event": hv.EV_SESSION,
+                     "Time": datetime.now().strftime("%d/%m/%Y %H:%M:%S")},
+            "Body": {"SubEvent": hv.SE_SESSION_OUTPUT, "Info": info},
+        })
+
+    client._session = fake_session
+    result = asyncio.run(client._collect(
+        "ABC123", "frame", "whoami", "00ABC123", seen, 1
+    ))
+    assert result["raw_chunks"] == (1 if task_id == "00ABC123" else 0)
+    assert result["output"] == ("output" if task_id == "00ABC123" else "")
+
+
+def test_havoc_credentials_have_no_source_default_and_tls_verifies(monkeypatch):
+    monkeypatch.delenv("HAVOC_OPERATOR_PASSWORD", raising=False)
+    client = hv.HavocClient()
+    assert client.password == ""
+    assert client.ssl_ctx.verify_mode == hv.ssl.CERT_REQUIRED
+    assert client.ssl_ctx.check_hostname is True
+
+
+def test_havoc_uses_isolated_trust_mount_by_default(monkeypatch):
+    monkeypatch.delenv("HAVOC_CA_FILE", raising=False)
+    captured = {}
+    monkeypatch.setattr(hv.Path, "is_file", lambda _self: True)
+    monkeypatch.setattr(
+        hv.ssl,
+        "create_default_context",
+        lambda **kwargs: captured.update(kwargs) or object(),
+    )
+
+    hv.HavocClient()
+
+    assert captured["cafile"] == "/trust/havoc/havoc.crt"
+
+    monkeypatch.setenv("HAVOC_OPERATOR_PASSWORD", "deployment-secret")
+    configured = hv.HavocClient()
+    assert configured.password == "deployment-secret"
+    login_info = json.loads(configured._login_frame())["Body"]["Info"]
+    import hashlib
+    assert login_info["Password"] == hashlib.sha3_256(b"deployment-secret").hexdigest()
 
 
 @pytest.mark.parametrize("line,expect", [
@@ -74,6 +133,7 @@ def frame_for(line, **kw):
 ])
 def test_run_builds_correct_frame(line, expect):
     info = frame_for(line)
+    assert re.fullmatch(r"[0-9A-F]{8}", info["TaskID"])
     for key, value in expect.items():
         assert info.get(key) == value, f"{line!r}: {key}={info.get(key)!r}"
 

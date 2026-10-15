@@ -12,7 +12,7 @@ name: c2stack
 
 services:
   kali:
-    image: kalilinux/kali-rolling:latest
+    image: kalilinux/kali-rolling:latest@sha256:c6d78f57ebfdd9fec428a8b04f74876e66fddd08dfd328c076224a552e7332a3
     container_name: c2stack-kali
     profiles: ["kali"]
     cap_add:
@@ -22,7 +22,7 @@ services:
       - seccomp:unconfined
     environment:
       DISPLAY: ":0"
-      VNC_PASSWORD: "${KALI_VNC_PASSWORD:-cadre}"
+      VNC_PASSWORD: "${KALI_VNC_PASSWORD:?Run docker-bootstrap to generate KALI_VNC_PASSWORD}"
     ports:
       - "${KALI_NOVNC_PORT:-6080}:6080"
       - "${KALI_VNC_PORT:-5900}:5900"
@@ -48,10 +48,10 @@ services:
         sleep 3
         export DISPLAY=:0
         fluxbox >/dev/null 2>&1 &
-        x11vnc -display :0 -rfbport 5900 -passwd "$${VNC_PASSWORD:-cadre}" -forever -shared &
+        x11vnc -display :0 -rfbport 5900 -passwd "$${VNC_PASSWORD}" -forever -shared &
         sleep 1
         websockify --web=/usr/share/novnc 6080 localhost:5900 &
-        echo "[kali] noVNC: http://localhost:6080/vnc.html?password=$${VNC_PASSWORD:-cadre}"
+        echo "[kali] noVNC: http://localhost:6080/vnc.html (enter the generated VNC password)"
         exec sleep infinity
     tty: true
     stdin_open: true

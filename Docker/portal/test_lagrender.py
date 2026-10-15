@@ -23,6 +23,13 @@ def _isolated(monkeypatch):
                             os.path.join(tmp, "lab-config.json"))
         monkeypatch.setattr(labconfig, "_overrides", {})
         monkeypatch.setattr(lagrender, "RENDER_DIR", os.path.join(tmp, "render"))
+        monkeypatch.setattr(lagrender, "TEMPLATE_DIR", os.path.join(tmp, "templates"))
+        monkeypatch.setattr(lagrender, "REDIRECTOR_CONF",
+                            os.path.join(tmp, "render", "redirector", "c2stack.conf"))
+        monkeypatch.setattr(lagrender, "MERIDIAN_CONFIG",
+                            os.path.join(tmp, "render", "meridian", "config.json"))
+        monkeypatch.setattr(lagrender, "HAVOC_PROFILE",
+                            os.path.join(tmp, "render", "havoc", "havoc.yaotl"))
         # Backend coordinates come from the environment; pin them so the tests
         # assert on the template substitution, not on ambient env state.
         for key, value in (("MYTHIC_BACKEND_HOST", "mythic_http"),
@@ -40,6 +47,8 @@ def _isolated(monkeypatch):
                            ("MYTHIC_HTTPX_URI_PREFIX", "/media/uploads"),
                            ("SLIVER_HEADER_GATE", "on")):
             monkeypatch.setenv(key, value)
+        monkeypatch.setenv("HAVOC_OPERATOR_PASSWORD", "test-operator-password")
+        monkeypatch.setenv("HAVOC_SERVICE_PASSWORD", "test-service-password")
         yield
 
 
@@ -106,7 +115,7 @@ def test_redirector_reflects_configured_header():
     labconfig.set_overrides({"c2_header_name": "X-Lab",
                              "c2_header_value": "tok-42"})
     out = lagrender.render_redirector(VHOST)
-    assert "%{HTTP:X-Lab} ^tok-42$ [NC]" in out
+    assert r"%{HTTP:X-Lab} ^tok\-42$ [NC]" in out
 
 
 def test_header_value_with_regex_and_dollar_chars():
@@ -122,6 +131,31 @@ def test_header_value_escapes_literal_dots():
     labconfig.set_overrides({"c2_header_value": "literal.review"})
     out = lagrender.render_redirector(VHOST)
     assert r"^literal\.review$ [NC]" in out
+
+
+def test_regex_metacharacters_in_literal_route_values_are_escaped():
+    labconfig.set_overrides({
+        "c2_header_value": "left|right+value",
+        "havoc_uri_prefix": "/literal/(one|two)+",
+    })
+    out = lagrender.render_redirector(VHOST)
+    assert r"^left\|right\+value$ [NC]" in out
+    assert r"^/literal/\(one\|two\)\+(/|$)" in out
+
+
+def test_header_control_characters_are_rejected():
+    applied, errors = labconfig.set_overrides(
+        {"c2_header_value": "safe\nRewriteRule .* http://evil"}
+    )
+    assert applied == {}
+    assert errors and "no newlines allowed" in errors[0]
+    assert "RewriteRule .* http://evil" not in lagrender.render_redirector(VHOST)
+
+
+def test_environment_header_name_cannot_inject_apache_directives(monkeypatch):
+    monkeypatch.setenv("C2_HEADER_NAME", "X-Lab\nRewriteRule")
+    with pytest.raises(lagrender.RenderError, match="valid HTTP token"):
+        lagrender.render_redirector(VHOST)
 
 
 def _sliver_gate_line(rendered: str) -> str:
@@ -212,6 +246,31 @@ def test_render_all_reports_missing_template_without_aborting():
     assert any("redirector" in e for e in result["errors"])
     # Meridian needs no template, so it must still be written.
     assert any(w["target"] == "meridian" for w in result["written"])
+
+
+def test_render_all_reads_templates_outside_persistent_render_volume():
+    """An old /render volume must not be able to mask image template updates."""
+    os.makedirs(lagrender.TEMPLATE_DIR)
+    with open(os.path.join(lagrender.TEMPLATE_DIR, "c2stack.conf.template"),
+              "w", encoding="utf-8") as fh:
+        fh.write(VHOST)
+    with open(os.path.join(lagrender.TEMPLATE_DIR, "havoc.yaotl"),
+              "w", encoding="utf-8") as fh:
+        fh.write(HAVOC)
+    # Simulate a stale named volume containing an old template path. The
+    # renderer must ignore it and use the immutable image template directory.
+    stale_dir = os.path.join(lagrender.RENDER_DIR, "templates")
+    os.makedirs(stale_dir)
+    with open(os.path.join(stale_dir, "havoc.yaotl"), "w", encoding="utf-8") as fh:
+        fh.write("stale profile")
+
+    result = lagrender.render_all()
+
+    assert result["ok"], result["errors"]
+    rendered = io.open(lagrender.HAVOC_PROFILE, encoding="utf-8").read()
+    assert "stale profile" not in rendered
+    assert "test-service-password" not in rendered
+    assert "__HAVOC_SERVICE_PASSWORD__" not in rendered
 
 
 def test_render_all_is_idempotent():

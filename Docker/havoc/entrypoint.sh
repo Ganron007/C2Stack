@@ -26,6 +26,11 @@ TS_PORT="${HAVOC_TS_PORT:-40056}"
 URI="${HAVOC_URI_PREFIX:-/edge/cache/assets}"
 HDR_NAME="${C2_HEADER_NAME:-X-Request-ID}"
 HDR_VALUE="${C2_HEADER_VALUE:-cadre-c2}"
+OPERATOR_PASSWORD="${HAVOC_OPERATOR_PASSWORD:?HAVOC_OPERATOR_PASSWORD must be set; run docker-bootstrap.sh}"
+SERVICE_PASSWORD="${HAVOC_SERVICE_PASSWORD:?HAVOC_SERVICE_PASSWORD must be set; run docker-bootstrap.sh}"
+case "$OPERATOR_PASSWORD$SERVICE_PASSWORD" in
+  *[!A-Za-z0-9._-]*) echo "[havoc] FATAL: password values must use letters, digits, dot, underscore, or hyphen" >&2; exit 1 ;;
+esac
 
 CONFIG_SOURCE="environment (repo template)"
 if [ -f "$RENDERED" ]; then
@@ -53,6 +58,8 @@ else
     -e "s|__HAVOC_URI_PREFIX__|${URI}|g" \
     -e "s|__C2_HEADER_NAME__|${HDR_NAME}|g" \
     -e "s|__C2_HEADER_VALUE__|${HDR_VALUE}|g" \
+    -e "s|__HAVOC_OPERATOR_PASSWORD__|${OPERATOR_PASSWORD}|g" \
+    -e "s|__HAVOC_SERVICE_PASSWORD__|${SERVICE_PASSWORD}|g" \
     "$TEMPLATE" > "$TARGET"
 
   # An unsubstituted token would make the teamserver bind the wrong port or
@@ -62,6 +69,12 @@ else
     grep -o '__[A-Z_]*__' "$TARGET" | sort -u >&2
     exit 1
   fi
+fi
+
+if ! grep -Fq "Password = \"${OPERATOR_PASSWORD}\"" "$TARGET" || \
+   ! grep -Fq "Password = \"${SERVICE_PASSWORD}\"" "$TARGET"; then
+  echo "[havoc] FATAL: active profile does not contain the configured per-deployment credentials" >&2
+  exit 1
 fi
 
 # Report what the teamserver will actually load, read back from the file
@@ -85,4 +98,29 @@ sed -n '/^Listeners/,/^}/p' "$TARGET" | \
   while read -r h; do echo "[havoc]   header: ${h}"; done
 echo "[havoc]   ts port: $(awk -F'=' '/^ *Port =/ {gsub(/ /,"",$2); print $2}' "$TARGET" | head -1)"
 echo "[havoc]   listener port: $(sed -n '/^Listeners/,/^}/p' "$TARGET" | grep -oE 'PortBind *= *[0-9]+' | head -1 | grep -oE '[0-9]+')"
-exec /opt/havoc/teamserver/havoc server -d
+mkdir -p /trust
+# The upstream teamserver generates a fresh self-signed certificate on every
+# start. Remove the previous pair first so the wait below cannot publish a
+# stale certificate from the persistent data volume to the portal trust store.
+rm -f /opt/havoc/teamserver/data/server.cert /opt/havoc/teamserver/data/server.key
+/opt/havoc/teamserver/havoc server -d &
+HAVOC_PID=$!
+for _ in $(seq 1 100); do
+  if [ -s /opt/havoc/teamserver/data/server.cert ]; then
+    cp /opt/havoc/teamserver/data/server.cert /trust/havoc.crt
+    chmod 0644 /trust/havoc.crt
+    break
+  fi
+  if ! kill -0 "$HAVOC_PID" 2>/dev/null; then
+    wait "$HAVOC_PID"
+    exit $?
+  fi
+  sleep 0.2
+done
+if [ ! -s /trust/havoc.crt ]; then
+  echo "[havoc] FATAL: teamserver did not generate its TLS certificate" >&2
+  kill "$HAVOC_PID" 2>/dev/null || true
+  wait "$HAVOC_PID" || true
+  exit 1
+fi
+wait "$HAVOC_PID"

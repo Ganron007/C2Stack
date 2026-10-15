@@ -134,7 +134,7 @@ type Teamserver interface {
 	TsAxScriptCommands() (string, error)
 	TsAxScriptResolveHooks(agentName string, agentId string, listenerRegName string, os int, cmdline string, args map[string]interface{}) (string, string, bool, error)
 	TsAxScriptIsServerHook(id string) bool
-	TsAxScriptParseAndExecute(agentId string, username string, cmdline string) error
+	TsAxScriptParseAndExecute(agentId string, username string, cmdline string) (string, error)
 	AxGetAgentContext(agentId string) (agentName string, listenerRegName string, osType int, err error)
 }
 

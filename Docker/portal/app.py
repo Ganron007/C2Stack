@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import hmac
 import http.client
+import ipaddress
 import json
 import os
 import re
@@ -20,16 +21,26 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 
 def verify_operator_auth(request: Request) -> None:
-    """Validate operator authentication for control routes when C2STACK_API_KEY is configured."""
+    """Require the operator key remotely; allow keyless loopback-only labs."""
     api_key = os.environ.get("C2STACK_API_KEY") or os.environ.get("PORTAL_API_KEY")
     if not api_key:
-        return
+        peer = request.client.host if request.client else ""
+        try:
+            loopback = ipaddress.ip_address(peer).is_loopback
+        except ValueError:
+            loopback = False
+        if loopback:
+            return
+        raise HTTPException(
+            status_code=401,
+            detail="Operator API key required for non-loopback portal access",
+        )
     token = request.headers.get("X-API-Key")
     if not token:
         auth_hdr = request.headers.get("Authorization", "")
@@ -47,6 +58,41 @@ app = FastAPI(
     version="3.2.0",
     description="Unified Management & Visual Learning Portal for C2Stack",
 )
+
+
+@app.middleware("http")
+async def authenticate_api_requests(request: Request, call_next):
+    """Apply one authentication policy to every API read and control route."""
+    if request.url.path == "/api" or request.url.path.startswith("/api/"):
+        try:
+            verify_operator_auth(request)
+        except HTTPException as exc:
+            return JSONResponse(
+                {"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers
+            )
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def set_browser_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "camera=(), microphone=(), geolocation=(), payment=()",
+    )
+    if request.url.path == "/":
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; base-uri 'self'; object-src 'none'; "
+            "frame-ancestors 'none'; form-action 'self'; script-src 'self'; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "img-src 'self' data: blob:; "
+            "font-src 'self' data: https://fonts.gstatic.com; connect-src 'self'",
+        )
+    return response
 
 app.add_middleware(
     CORSMiddleware,
@@ -442,13 +488,12 @@ def ops_havoc_task_post(req: HavocTaskRequest) -> dict[str, Any]:
 @app.get("/api/ops/havoc/task", deprecated=True, dependencies=[Depends(verify_operator_auth)])
 def ops_havoc_task(demon_id: str, command: str,
                    wait: int = 25) -> dict[str, Any]:
-    """Task a Havoc session directly (deprecated GET: prefer POST /api/ops/havoc/task)."""
-    import havoc_client as hv
-    try:
-        return {"ok": True, "result": hv._run(
-            hv.HavocClient().task(demon_id, command, wait=float(wait)))}
-    except (cb.BackendError, hv.BackendError, OSError) as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    """Reject the retired mutating GET; tasking is POST-only."""
+    raise HTTPException(
+        status_code=405,
+        detail="GET tasking has been removed; use POST /api/ops/havoc/task",
+        headers={"Allow": "POST"},
+    )
 
 
 class SliverGenerateRequest(BaseModel):
@@ -781,48 +826,51 @@ def _find_service_container(
     substring matches (e.g. 'other-project-sliver-1') would otherwise be selected.
     """
     target_svc = service_name.lower()
+    # Public status/action routes call the service `mythic`; Docker Compose
+    # names its server container `mythic_server`.
+    compose_service = {"mythic": "mythic_server"}.get(target_svc, target_svc)
     project_env = (project_name or os.environ.get("COMPOSE_PROJECT_NAME") or "c2stack").lower()
 
-    # Pass 1: exact match on com.docker.compose.service AND matching com.docker.compose.project
+    # Compose labels are authoritative only when both identity labels agree.
+    owned = []
     for c in docker_containers:
         labels = c.get("Labels") or {}
         lbl_svc = str(labels.get("com.docker.compose.service", "")).lower()
         lbl_prj = str(labels.get("com.docker.compose.project", "")).lower()
-        if lbl_svc == target_svc:
-            if not lbl_prj or lbl_prj == project_env:
-                return c
+        if lbl_svc == compose_service and lbl_prj == project_env:
+            owned.append(c)
+    if len(owned) == 1:
+        return owned[0]
+    if len(owned) > 1:
+        return None
 
-    # Pass 2: exact match on com.docker.compose.service label
+    # Some older Docker-compatible runtimes omit labels. Accept only the
+    # canonical full Compose name for this project/service and a numeric index.
+    service_pattern = re.escape(compose_service).replace("_", "[-_]")
+    canonical = re.compile(
+        rf"^{re.escape(project_env)}[-_]{service_pattern}[-_]\d+$", re.IGNORECASE
+    )
+    named = []
     for c in docker_containers:
         labels = c.get("Labels") or {}
-        if str(labels.get("com.docker.compose.service", "")).lower() == target_svc:
-            return c
-
-    # Pass 3: canonical compose naming /<project>_<service>_<index> or /<project>-<service>-<index>
-    for c in docker_containers:
+        label_project = str(labels.get("com.docker.compose.project", "")).lower()
+        label_service = str(labels.get("com.docker.compose.service", "")).lower()
+        if (label_project and label_project != project_env) or (
+            label_service and label_service != compose_service
+        ):
+            continue
         for raw_name in c.get("Names", []):
             name = raw_name.lstrip("/").lower()
-            parts = name.replace("-", "_").split("_")
-            if target_svc in parts and (not project_env or project_env in parts):
-                return c
-
-    return None
+            if canonical.fullmatch(name):
+                named.append(c)
+                break
+    return named[0] if len(named) == 1 else None
 
 
 @app.get("/api/status")
 def get_status() -> dict[str, Any]:
     """Return health, published ports, and container states across the stack."""
     docker_containers = get_docker_containers()
-    container_map = {}
-    for c in docker_containers:
-        names = c.get("Names", [])
-        state = c.get("State", "unknown").lower()
-        status = c.get("Status", "")
-        cid = c.get("Id", "")[:12]
-        for name in names:
-            clean_name = name.lstrip("/").lower()
-            container_map[clean_name] = {"id": cid, "state": state, "status": status}
-
     services_status = {}
     for svc, meta in _ports().items():
         matched_container = None
@@ -833,18 +881,6 @@ def get_status() -> dict[str, Any]:
                 "state": target_c.get("State", "unknown").lower(),
                 "status": target_c.get("Status", ""),
             }
-        else:
-            exact = f"-{svc}-"
-            for cname, cinfo in container_map.items():
-                if exact in cname:
-                    matched_container = cinfo
-                    break
-            if matched_container is None:
-                for cname, cinfo in container_map.items():
-                    if svc in cname:
-                        matched_container = cinfo
-                        break
-
         # Check port reachability (published host ports only; string values
         # like "via redirector :80" describe internal bindings and are skipped)
         is_port_live = False
@@ -901,11 +937,13 @@ def container_action(service_name: str, action: str) -> dict[str, Any]:
     target_id = target_c.get("Id") if target_c else None
 
     if not target_id:
-        return {
-            "status": "unavailable",
-            "message": f"Container for service '{service_name}' not found",
-            "service": service_name,
-        }
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No unambiguous container for service '{service_name}' in Compose "
+                f"project '{os.environ.get('COMPOSE_PROJECT_NAME', 'c2stack')}'"
+            ),
+        )
 
     ok = run_container_lifecycle(target_id, action)
     return {"status": "ok" if ok else "error", "action": action, "service": service_name, "container_id": target_id}
@@ -973,7 +1011,7 @@ def test_redirector_flow(req: RedirectorTestRequest) -> dict[str, Any]:
             "step": 3,
             "title": "Serve Decoy CDN Content",
             "node": "CloudEdge CDN Engine",
-            "detail": "Serving benign HTTP 200 OK CDN asset page. Internal C2 teamservers remain 100% invisible to threat hunters and scanners.",
+            "detail": "Serving the configured decoy page for this redirector request. Other paths and published control ports remain independently reachable according to the deployment network policy.",
             "status": "decoy_served",
         })
         outcome = {
@@ -990,7 +1028,7 @@ def test_redirector_flow(req: RedirectorTestRequest) -> dict[str, Any]:
             "step": 2,
             "title": f"Inspect Header: {_cfg('c2_header_name')}",
             "node": "Apache RewriteEngine",
-            "detail": f"Header verified ('{_cfg('c2_header_name')}: {_cfg('c2_header_value')}'). Access granted to internal C2 network.",
+            "detail": f"The request header matched the configured redirector rule ({_cfg('c2_header_name')}: {_cfg('c2_header_value')}).",
             "status": "header_verified",
         })
 
@@ -999,8 +1037,8 @@ def test_redirector_flow(req: RedirectorTestRequest) -> dict[str, Any]:
             trace.append({
                 "step": 3,
                 "title": f"Reverse Proxy to {matched_framework.capitalize()}",
-                "node": f"Internal c2_core network (http://{matched_framework}:{backend_port})",
-                "detail": f"Proxying payload beacon to {matched_framework} container. Zero direct internet exposure.",
+                "node": f"C2Stack framework service (http://{matched_framework}:{backend_port})",
+            "detail": f"The redirector forwarded this request to the {matched_framework} framework service over Docker networking.",
                 "status": "c2_forwarded",
             })
             outcome = {
@@ -1154,7 +1192,7 @@ def get_payload_studio() -> dict[str, Any]:
             "name": "Mythic C2",
             "description": "Multi-agent collaborative framework (Apollo for Windows, Poseidon for Linux/macOS). Latest stable = 3.4.0.61 (v4 ships profiles built-in, not yet GA).",
             "stagers": {
-                "rest_login": f"curl -s http://{_victim_ip()}:{_cfg_int('mythic_ui_port', 7443)}/auth -X POST -H 'Content-Type: application/json' -d '{{\"username\":\"mythic_admin\",\"password\":\"mythic\"}}'",
+                "rest_login": f"POST http://{_victim_ip()}:{_cfg_int('mythic_ui_port', 7443)}/auth with username mythic_admin and the local MYTHIC_ADMIN_PASSWORD from Docker/.env",
                 "payload_build": f"create_c2parameter_instance_webhook -> start_stop_profile_webhook -> createpayload_webhook (payloadDefinition JSON-STRING, build_parameters as LIST; C2 shape: bare callback_host http://{_victim_ip()} + full-path post_uri {_prefixes()['mythic']}/data) -> download exe via GET /direct/download/<uuid>. Verified working incl. keying + COFF; see Docker/mythic/README.md and Module 5.",
                 "ui_url": f"http://{_victim_ip()}:{_cfg_int('mythic_ui_port', 7443)} (REST/psql surface; the browser UI is upstream optional containers we don't ship)",
             },
@@ -1541,7 +1579,6 @@ def ops_task(req: TaskRequest) -> dict[str, Any]:
             return {"ok": True, "backend": "meridian",
                     "result": cb.meridian_exec(req.session_id, req.command)}
         if req.backend == "mythic":
-            import time as _time
             client = cb.MythicClient()
             cid = req.callback_id if req.callback_id is not None else int(req.session_id)
             # `shell` is an ALIAS command: params is the RAW command line, not JSON.
@@ -1549,26 +1586,24 @@ def ops_task(req: TaskRequest) -> dict[str, Any]:
                               {"input": {"command": "shell", "params": req.command,
                                          "callback_id": cid}})
             task_id = out.get("id")
-            # task.stdout never carries output in this stack (see matrix
-            # §1.3); poll the response table where the agent's real output
-            # lands (callback interval 10s + jitter, so allow the wait).
-            output: list[str] = []
-            if task_id:
-                stop = _time.time() + max(5.0, float(req.wait))
-                while _time.time() < stop:
-                    output = cb.mythic_task_output(task_id)
-                    if output:
-                        break
-                    _time.sleep(5)
+            # Preserve the accepted task ID in the response. Result polling is
+            # a separate operation; a transient output-store error must not
+            # turn accepted tasking into a retryable 502.
             return {"ok": True, "backend": "mythic",
-                    "result": {**out, "output": "\n".join(output)}}
+                    "task_id": task_id, "result": out}
         if req.backend == "adaptix":
             import adaptix_client as ax
             ac = ax.AdaptixClient()
             ac.login()
+            result = ac.agent_command_raw(req.session_id, req.command)
+            if not isinstance(result, dict) or result.get("ok") is not True:
+                message = result.get("message") if isinstance(result, dict) else None
+                raise cb.BackendError(str(message or "adaptix task was not accepted"))
+            task_id = str(result.get("task_id") or "")
+            if not task_id:
+                raise cb.BackendError("adaptix accepted no correlated task ID")
             return {"ok": True, "backend": "adaptix",
-                    "result": ac.agent_command_raw(req.session_id, req.command),
-                    "results": ac.completed_tasks(req.session_id, limit=10)}
+                    "task_id": task_id, "result": result}
         if req.backend == "havoc":
             import havoc_client as hv
             return {"ok": True, "backend": "havoc",
@@ -1814,7 +1849,14 @@ def ops_adaptix_task(req: AdaptixTaskRequest) -> dict[str, Any]:
     try:
         ac = ax.AdaptixClient()
         ac.login()
-        return {"ok": True, "result": ac.agent_command_raw(req.agent_id, req.cmdline)}
+        result = ac.agent_command_raw(req.agent_id, req.cmdline)
+        if not isinstance(result, dict) or result.get("ok") is not True:
+            message = result.get("message") if isinstance(result, dict) else None
+            raise cb.BackendError(str(message or "adaptix task was not accepted"))
+        task_id = str(result.get("task_id") or "")
+        if not task_id:
+            raise cb.BackendError("adaptix accepted no correlated task ID")
+        return {"ok": True, "task_id": task_id, "result": result}
     except cb.BackendError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 

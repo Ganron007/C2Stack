@@ -1,4 +1,8 @@
-FROM golang:1.25-bookworm AS base
+ARG GO_WIN7_COMMIT=7f6f947f37991ba5778c41ee093c8527560e4d9f
+ARG GO_TARBALL_SHA256=9fa5ffeda4170de60f67f3aa0f824e426421ba724c21e133c1e35d6159ca1bec
+
+FROM golang:1.25.14-bookworm@sha256:3b4a11519ad929d1e1d261a12cff056f0c85b735253d7d861346b9c6f8b36437 AS base
+ARG GO_WIN7_COMMIT
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -18,7 +22,7 @@ WORKDIR /app
 # ============================================
 # Stage: build-client (Qt client)
 # ============================================
-FROM ubuntu:22.04 AS build-client
+FROM ubuntu:22.04@sha256:829f6df217bcbae2b371026e81711d1a787c61b2967ad09d015063663ebafbf7 AS build-client
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV QT_VERSION=6.9.2
@@ -152,7 +156,9 @@ RUN make server && make extenders
 # ============================================
 # Stage: runtime (runtime for server execution)
 # ============================================
-FROM debian:bookworm-slim AS runtime
+FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS runtime
+ARG GO_WIN7_COMMIT
+ARG GO_TARBALL_SHA256
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -167,13 +173,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN wget https://go.dev/dl/go1.25.4.linux-amd64.tar.gz -O /tmp/go1.25.4.linux-amd64.tar.gz && \
+    echo "$GO_TARBALL_SHA256  /tmp/go1.25.4.linux-amd64.tar.gz" | sha256sum -c - && \
     rm -rf /usr/local/go /usr/local/bin/go && \
     tar -C /usr/local -xzf /tmp/go1.25.4.linux-amd64.tar.gz && \
     ln -s /usr/local/go/bin/go /usr/local/bin/go && \
     rm /tmp/go1.25.4.linux-amd64.tar.gz && \
     echo "[+] Go 1.25.4 installed successfully"
 
-RUN git clone https://github.com/Adaptix-Framework/go-win7 /tmp/go-win7 && \
+RUN git init /tmp/go-win7 && \
+    git -C /tmp/go-win7 fetch --depth=1 https://github.com/Adaptix-Framework/go-win7.git "$GO_WIN7_COMMIT" && \
+    git -C /tmp/go-win7 checkout --detach FETCH_HEAD && \
     mv /tmp/go-win7 /usr/lib/ && \
     mkdir -p /usr/lib/go-win7/pkg/include && \
     cd /usr/lib/go-win7/src/runtime && \

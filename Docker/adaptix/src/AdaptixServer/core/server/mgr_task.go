@@ -134,15 +134,15 @@ func (tm *TaskManager) executeServerHandler(taskData *adaptix.TaskData) {
 	taskData.HandlerId = ""
 }
 
-func (tm *TaskManager) Create(agentId string, cmdline string, client string, taskData adaptix.TaskData) {
+func (tm *TaskManager) Create(agentId string, cmdline string, client string, taskData adaptix.TaskData) string {
 	agent, err := tm.getAgent(agentId)
 	if err != nil {
 		logs.Error("", "TsTaskCreate: %v", err)
-		return
+		return ""
 	}
 
 	if !agent.Active {
-		return
+		return ""
 	}
 
 	tm.prepareTaskData(agent, cmdline, client, &taskData)
@@ -155,14 +155,14 @@ func (tm *TaskManager) Create(agentId string, cmdline string, client string, tas
 		Client:  client,
 	}
 	if !tm.ts.EventManager.Emit(eventing.EventTaskCreate, eventing.HookPre, preEvent) {
-		return
+		return ""
 	}
 	// ----------------
 
 	handler, ok := tm.handlers[taskData.Type]
 	if !ok {
 		logs.Debug("", "Unknown task type: %d", taskData.Type)
-		return
+		return ""
 	}
 
 	handler.Create(tm, agent, &taskData)
@@ -176,6 +176,7 @@ func (tm *TaskManager) Create(agentId string, cmdline string, client string, tas
 	}
 	tm.ts.EventManager.EmitAsync(eventing.EventTaskCreate, postEvent)
 	// -----------------
+	return taskData.TaskId
 }
 
 func (tm *TaskManager) Update(agentId string, updateData adaptix.TaskData) {

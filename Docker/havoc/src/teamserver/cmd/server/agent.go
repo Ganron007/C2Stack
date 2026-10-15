@@ -3,10 +3,10 @@ package server
 import (
 	"Havoc/pkg/logger"
 	"encoding/json"
-	"math/rand"
-	"time"
 	"fmt"
+	"math/rand"
 	"strconv"
+	"time"
 
 	"Havoc/pkg/agent"
 	"Havoc/pkg/events"
@@ -65,7 +65,7 @@ func (t *Teamserver) LinksOf(Agent *agent.Agent) []int {
 
 func (t *Teamserver) LinkAdd(ParentAgent *agent.Agent, LinkAgent *agent.Agent) error {
 	var ParentAgentID, _ = strconv.ParseInt(ParentAgent.NameID, 16, 64)
-	var LinkAgentID,   _ = strconv.ParseInt(LinkAgent.NameID, 16, 64)
+	var LinkAgentID, _ = strconv.ParseInt(LinkAgent.NameID, 16, 64)
 
 	err := t.DB.LinkAdd(int(ParentAgentID), int(LinkAgentID))
 	if err != nil {
@@ -77,7 +77,7 @@ func (t *Teamserver) LinkAdd(ParentAgent *agent.Agent, LinkAgent *agent.Agent) e
 
 func (t *Teamserver) LinkRemove(ParentAgent *agent.Agent, LinkAgent *agent.Agent, UpdateLinks bool) {
 	var ParentAgentID, _ = strconv.ParseInt(ParentAgent.NameID, 16, 64)
-	var LinkAgentID,   _ = strconv.ParseInt(LinkAgent.NameID, 16, 64)
+	var LinkAgentID, _ = strconv.ParseInt(LinkAgent.NameID, 16, 64)
 
 	LinkAgent.Active = false
 	LinkAgent.Reason = "Disconnected"
@@ -166,10 +166,10 @@ func (t *Teamserver) AgentInstance(AgentID int) *agent.Agent {
 func (t *Teamserver) AgentLastTimeCalled(AgentID string, LastCallback string, Sleep int, Jitter int, KillDate int64, WorkingHours int32) {
 	var (
 		Output = map[string]string{
-			"Last": LastCallback,
-			"Sleep": fmt.Sprintf("%d", Sleep),
-			"Jitter": fmt.Sprintf("%d", Jitter),
-			"KillDate": fmt.Sprintf("%d", KillDate),
+			"Last":         LastCallback,
+			"Sleep":        fmt.Sprintf("%d", Sleep),
+			"Jitter":       fmt.Sprintf("%d", Jitter),
+			"KillDate":     fmt.Sprintf("%d", KillDate),
 			"WorkingHours": fmt.Sprintf("%d", WorkingHours),
 		}
 
@@ -196,9 +196,17 @@ func (t *Teamserver) AgentExist(AgentID int) bool {
 }
 
 func (t *Teamserver) AgentConsole(AgentID string, CommandID int, Output map[string]string) {
+	t.agentConsole(AgentID, CommandID, Output, "")
+}
+
+func (t *Teamserver) AgentConsoleWithTaskID(AgentID string, CommandID int, Output map[string]string, RequestID uint32) {
+	t.agentConsole(AgentID, CommandID, Output, fmt.Sprintf("%08X", RequestID))
+}
+
+func (t *Teamserver) agentConsole(AgentID string, CommandID int, Output map[string]string, TaskID string) {
 	var (
 		out, _ = json.Marshal(Output)
-		pk     = events.Demons.DemonOutput(AgentID, CommandID, string(out))
+		pk     = events.Demons.DemonOutput(AgentID, CommandID, string(out), TaskID)
 	)
 
 	t.EventAppend(pk)

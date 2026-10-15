@@ -202,29 +202,29 @@ func (ts *Teamserver) TsAxScriptCommands() (string, error) {
 }
 
 // /---
-func (ts *Teamserver) TsAxScriptParseAndExecute(agentId string, username string, cmdline string) error {
+func (ts *Teamserver) TsAxScriptParseAndExecute(agentId string, username string, cmdline string) (string, error) {
 	if ts.ScriptManager == nil {
-		return fmt.Errorf("script manager not initialized")
+		return "", fmt.Errorf("script manager not initialized")
 	}
 
 	agentName, listenerRegName, agentOs, err := ts.AxGetAgentContext(agentId)
 	if err != nil {
-		return fmt.Errorf("agent not found: %w", err)
+		return "", fmt.Errorf("agent not found: %w", err)
 	}
 
 	resolved, resolveErr := ts.ScriptManager.CommandStore.ResolveFromCmdline(agentName, listenerRegName, agentOs, cmdline)
 	if resolveErr != nil {
-		return fmt.Errorf("unknown command: %w", resolveErr)
+		return "", fmt.Errorf("unknown command: %w", resolveErr)
 	}
 
 	parsed, parseErr := ts.ScriptManager.ParseCommandPublic(cmdline, resolved)
 	if parseErr != nil {
-		return fmt.Errorf("parse error: %w", parseErr)
+		return "", fmt.Errorf("parse error: %w", parseErr)
 	}
 
 	if resolved.Engine != nil {
 		if fileErr := ts.ScriptManager.ResolveFileArgsPublic(resolved.Engine, parsed); fileErr != nil {
-			return fmt.Errorf("file arg error: %w", fileErr)
+			return "", fmt.Errorf("file arg error: %w", fileErr)
 		}
 	}
 
@@ -237,10 +237,10 @@ func (ts *Teamserver) TsAxScriptParseAndExecute(agentId string, username string,
 		preHookErr := ts.ScriptManager.ExecutePreHookPublic(resolved.Engine, cmdDef.PreHookFunc, agentId, cmdline, parsed.Args)
 		if preHookErr != nil {
 			ts.TsAgentConsoleOutputClient(agentId, username, CONSOLE_OUT_LOCAL_ERROR, cmdline, std.ExtractJsErrorMessage(preHookErr))
-			return nil
+			return "", nil
 		}
 		//ts.TsAgentConsoleOutputClient(agentId, username, 0, fmt.Sprintf("[AxScript] %s", cmdline), "")
-		return nil
+		return "", nil
 	}
 
 	hookId := ""
@@ -253,7 +253,7 @@ func (ts *Teamserver) TsAxScriptParseAndExecute(agentId string, username string,
 		handlerId = ts.ScriptManager.HookStore.RegisterHandler(resolved.Engine, cmdDef.HandlerFunc, agentId, "server")
 	}
 
-	return ts.TsAgentCommand(agentName, agentId, username, hookId, handlerId, cmdline, false, parsed.Args)
+	return ts.TsAgentCommandWithID(agentName, agentId, username, hookId, handlerId, cmdline, false, parsed.Args)
 }
 
 func (ts *Teamserver) TsAxScriptResolveHooks(agentName string, agentId string, listenerRegName string, os int, cmdline string, args map[string]interface{}) (string, string, bool, error) {

@@ -10,19 +10,20 @@ other frameworks use), so the compose profile pins those images directly.
 |------------------|----------------------------------------------|----------------------------------------|
 | `mythic_server`  | `ghcr.io/its-a-feature/mythic_server:v3.4.0.61` | Go server: DB init, webserver, rabbit wiring (port 17443 API, 17444 gRPC); published host-side on `MYTHIC_UI_PORT` (default 7443) |
 | `mythic_postgres`| `postgres:15`                                | Mythic SQL backend                     |
-| `mythic_rabbitmq`| `rabbitmq:3-management`                      | Event/RPC broker + mgmt API, vhost `mythic_vhost` (user `mythic_user` / `mythic`) |
+| `mythic_rabbitmq`| pinned RabbitMQ image                      | Event/RPC broker + mgmt API, vhost `mythic_vhost`; deployment password is `MYTHIC_RABBITMQ_PASSWORD` in the ignored `.env` |
 | `mythic_apollo`  | `ghcr.io/mythicagents/apollo:v0.0.1.19`      | Apollo payload-type container: 81 commands, self-registers over RabbitMQ |
 | `mythic_http`    | `ghcr.io/mythicc2profiles/http:v0.0.3.2`     | HTTP C2 profile container: serves the :80 listener agents call back to, self-registers over RabbitMQ |
 
 Verified on Docker Desktop (compose v5.3.1, flag order matters):
-`docker compose --env-file .env --profile mythic up -d`
+`docker compose --env-file .env --profile mythic up -d` (after running the
+bootstrap once so the ignored Apollo config is rendered)
 
 - Server completes all 6 init steps, container reports `healthy`; API answers
   on 17443 (plain HTTP) and `/static/` is auth-gated (401).
 - Apollo self-registers: 81 commands in the DB, `payloadtype.container_running=t`.
 - HTTP C2 profile self-registers: `c2profile` table populated (`id=1, name=http,
   container_running=t`), HTTP listener live on :80 inside the container.
-- JWT login: `POST /auth` with `{"username":"mythic_admin","password":"mythic"}`.
+- JWT login: `POST /auth` with the operator name and `MYTHIC_ADMIN_PASSWORD` from the ignored `.env`.
 - **Full payload build verified**: created an Apollo .exe (1.7 MB, valid MZ PE)
   with the http C2 profile, `callback_host=http://192.168.100.1` (redirector),
   `callback_port=80`, `X-Request-ID: cadre-c2` header. Build completed
@@ -38,8 +39,9 @@ generator; the wiring in `Docker/docker-compose.yml` replaces it directly.
 
 Two different container frameworks are in play:
 - **Apollo** (Python, `mythic-container==0.6.14`): reads `rabbitmq_config.json`
-  from the working dir via Dynaconf (no envvar prefix → env vars don't affect
-  broker host). C2Stack mounts `apollo/rabbitmq_config.json` — this file also
+  from the working dir via Dynaconf. Bootstrap renders the ignored
+  `apollo/rabbitmq_config.generated.json` with the generated broker password
+  and mounts it as `rabbitmq_config.json` — this file also
   sets `mythic_server_host`/`mythic_server_port` so built payloads upload back
   to the server via `/direct/upload`.
 - **http C2 profile** (Go, `MythicContainer v1.5.1`): reads broker config from
@@ -103,4 +105,5 @@ image pin, drop the `mythic_http` service, and profiles register automatically.
 - `MYTHIC_UI_PORT` — host port for the REST API (default 7443).
 - `MYTHIC_BACKEND_HOST=mythic_http` — redirector proxies `/cdn/media/stream`
   to the http C2 profile container (not the server).
-- Admin credentials default: `mythic_admin` / `mythic` (change for real use).
+- Admin username defaults to `mythic_admin`; bootstrap generates its password
+  as `MYTHIC_ADMIN_PASSWORD` in the ignored `.env`.

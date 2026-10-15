@@ -18,6 +18,14 @@ window.fetch = async function(input, init) {
   init = init || {};
   let key = sessionStorage.getItem('c2stack_api_key') || localStorage.getItem('c2stack_api_key');
   const requestUrl = typeof input === 'string' ? input : (input && input.url ? input.url : '');
+  let sameOriginApi = false;
+  try {
+    const resolved = new URL(requestUrl, window.location.href);
+    sameOriginApi = resolved.origin === window.location.origin &&
+      (resolved.pathname === '/api' || resolved.pathname.startsWith('/api/'));
+  } catch (err) {
+    sameOriginApi = false;
+  }
 
   function attachKey(headers, token) {
     if (typeof Headers !== 'undefined' && headers instanceof Headers) {
@@ -31,12 +39,12 @@ window.fetch = async function(input, init) {
     }
   }
 
-  if (key && (requestUrl.startsWith('/api/') || requestUrl.includes('/api/'))) {
+  if (key && sameOriginApi) {
     init.headers = attachKey(init.headers, key);
   }
 
   const res = await _rawFetch.call(this, input, init);
-  if (res.status === 401 && (requestUrl.startsWith('/api/') || requestUrl.includes('/api/')) && typeof window.prompt === 'function') {
+  if (res.status === 401 && sameOriginApi && typeof window.prompt === 'function') {
     const entered = window.prompt('Operator API Key required for C2Stack control plane:');
     if (entered) {
       key = entered.trim();
@@ -88,6 +96,7 @@ function initTabs() {
 async function initStatusHUD() {
   const grid = document.getElementById('service-grid');
   const refreshBtn = document.getElementById('refresh-status-btn');
+  const syncBtn = document.getElementById('sync-docker-status-btn');
 
   async function fetchStatus() {
     try {
@@ -110,7 +119,7 @@ async function initStatusHUD() {
         victimEl.textContent = data.victim_redirector_ip;
       }
     } catch (err) {
-      grid.innerHTML = `<div class="card" style="color:var(--crimson-glow);">Failed to connect to portal API backend: ${err.message}</div>`;
+      grid.innerHTML = `<div class="card" style="color:var(--crimson-glow);">Failed to connect to portal API backend: ${esc(err.message)}</div>`;
     }
   }
 
@@ -127,33 +136,36 @@ async function initStatusHUD() {
       let portSummary = [];
       for (const [pname, pval] of Object.entries(svc.ports || {})) {
         if (typeof pval === 'number' || typeof pval === 'string') {
-          portSummary.push(`<div class="service-meta-item"><span class="service-meta-label">${pname.toUpperCase()}</span><span>${pval}</span></div>`);
+          portSummary.push(`<div class="service-meta-item"><span class="service-meta-label">${esc(pname.toUpperCase())}</span><span>${esc(pval)}</span></div>`);
         }
       }
 
       card.innerHTML = `
         <div class="service-head">
           <div>
-            <div class="service-name">${svc.name}</div>
-            <div class="service-role">${svc.role}</div>
+            <div class="service-name">${esc(svc.name)}</div>
+            <div class="service-role">${esc(svc.role)}</div>
           </div>
           <span class="status-badge ${statusClass}">${statusText}</span>
         </div>
         <div class="service-meta">
           ${portSummary.join('')}
-          ${svc.uri_prefix ? `<div class="service-meta-item"><span class="service-meta-label">PREFIX</span><span>${svc.uri_prefix}</span></div>` : ''}
-          <div class="service-meta-item"><span class="service-meta-label">CONTAINER</span><span>${svc.container ? svc.container.id : 'standalone'}</span></div>
+          ${svc.uri_prefix ? `<div class="service-meta-item"><span class="service-meta-label">PREFIX</span><span>${esc(svc.uri_prefix)}</span></div>` : ''}
+          <div class="service-meta-item"><span class="service-meta-label">CONTAINER</span><span>${svc.container ? esc(svc.container.id) : 'standalone'}</span></div>
         </div>
         <div class="service-actions">
-          <button class="btn btn-sm btn-secondary" onclick="viewContainerLogs('${key}')">📄 View Logs</button>
-          <button class="btn btn-sm btn-secondary" onclick="restartContainer('${key}')">↻ Restart</button>
+          <button class="btn btn-sm btn-secondary" data-action="logs" data-service="${esc(key)}">📄 View Logs</button>
+          <button class="btn btn-sm btn-secondary" data-action="restart" data-service="${esc(key)}">↻ Restart</button>
         </div>
       `;
+      card.querySelector('[data-action="logs"]').addEventListener('click', () => viewContainerLogs(key));
+      card.querySelector('[data-action="restart"]').addEventListener('click', () => restartContainer(key));
       grid.appendChild(card);
     }
   }
 
   if (refreshBtn) refreshBtn.addEventListener('click', fetchStatus);
+  if (syncBtn) syncBtn.addEventListener('click', fetchStatus);
   fetchStatus();
 }
 
@@ -241,7 +253,7 @@ function initRedirectorVisualizer() {
       const data = await res.json();
       renderTrace(opsProbeToTrace(data));
     } catch (err) {
-      diagram.innerHTML = `<div style="color:var(--crimson-glow);">Simulation error: ${err.message}</div>`;
+      diagram.innerHTML = `<div style="color:var(--crimson-glow);">Simulation error: ${esc(err.message)}</div>`;
     }
   }
 
@@ -256,9 +268,9 @@ function initRedirectorVisualizer() {
 
       nodeEl.className = `flow-node ${isVerified ? 'active' : ''} ${isShielded ? 'shielded' : ''}`;
       nodeEl.innerHTML = `
-        <div class="flow-node-step">Step ${step.step}</div>
-        <div class="flow-node-title">${step.title}</div>
-        <div class="flow-node-desc">${step.detail}</div>
+        <div class="flow-node-step">Step ${esc(step.step)}</div>
+        <div class="flow-node-title">${esc(step.title)}</div>
+        <div class="flow-node-desc">${esc(step.detail)}</div>
       `;
       diagram.appendChild(nodeEl);
 
@@ -271,9 +283,9 @@ function initRedirectorVisualizer() {
     });
 
     if (data.opsec_shielded) {
-      backendDetail.innerHTML = `<span style="color:var(--crimson-glow);">[BLOCKED FROM C2 CORE]</span> Traffic diverted to Decoy CDN. Apache returned <strong>${data.http_status}</strong>. Teamserver remained untouched.`;
+      backendDetail.innerHTML = `<span style="color:var(--crimson-glow);">[DIVERTED TO DECOY]</span> The redirector returned the decoy page. Apache returned <strong>${esc(data.http_status)}</strong>. The request was not forwarded to a C2 backend.`;
     } else {
-      backendDetail.innerHTML = `<span style="color:var(--green-glow);">[FORWARDED TO ${data.framework ? data.framework.toUpperCase() : 'C2'}]</span> Internal Destination: <code>${data.internal_endpoint}</code> on isolated network <code>c2_core</code>.`;
+      backendDetail.innerHTML = `<span style="color:var(--green-glow);">[FORWARDED TO ${esc(data.framework ? data.framework.toUpperCase() : 'C2')}]</span> Internal Destination: <code>${esc(data.internal_endpoint)}</code> on the C2Stack service network.`;
     }
   }
 
@@ -325,12 +337,14 @@ function initDnsDissector() {
     data.packets.forEach(pkt => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td><span class="status-badge running">#${pkt.sequence}/${pkt.total}</span></td>
-        <td><span class="query-fqdn">${pkt.generated_query}</span></td>
-        <td>${pkt.chunk_len}B / 36B</td>
+        <td><span class="status-badge running">#${esc(pkt.sequence)}/${esc(pkt.total)}</span></td>
+        <td><span class="query-fqdn">${esc(pkt.generated_query)}</span></td>
+        <td>${esc(pkt.chunk_len)}B / 36B</td>
         <td><span style="color:var(--green-glow);">✓ Label Safe (&lt;63B)</span></td>
-        <td><button class="btn btn-sm btn-secondary" onclick="navigator.clipboard.writeText('${pkt.generated_query}')">📋 Copy FQDN</button></td>
+        <td><button class="btn btn-sm btn-secondary" data-copy-fqdn>📋 Copy FQDN</button></td>
       `;
+      tr.querySelector('[data-copy-fqdn]').addEventListener('click', () =>
+        navigator.clipboard.writeText(pkt.generated_query));
       tbody.appendChild(tr);
     });
 
@@ -381,19 +395,21 @@ async function initPayloadStudio() {
       scard.className = 'stager-card';
       scard.innerHTML = `
         <div class="stager-header">
-          <span class="stager-title">${stitle.replace('_', ' ').toUpperCase()}</span>
-          <button class="btn btn-sm btn-secondary" onclick="navigator.clipboard.writeText(this.getAttribute('data-code'))" data-code="${scode}">📋 Copy One-Liner</button>
+          <span class="stager-title">${esc(stitle.replace('_', ' ').toUpperCase())}</span>
+          <button class="btn btn-sm btn-secondary" data-copy-stager>📋 Copy One-Liner</button>
         </div>
-        <div class="stager-code">${scode}</div>
+        <div class="stager-code">${esc(scode)}</div>
       `;
+      scard.querySelector('[data-copy-stager]').addEventListener('click', () =>
+        navigator.clipboard.writeText(scode));
       stagersList.appendChild(scard);
     }
 
     const d = profile.detection || {};
     detectionBox.innerHTML = `
-      <div><strong>Network Artifacts:</strong> <span style="color:var(--text-secondary);">${d.network || 'Standard C2 protocol'}</span></div>
-      <div><strong>Host Indicators:</strong> <span style="color:var(--text-secondary);">${d.host || 'Process memory allocation'}</span></div>
-      <div><strong>Key Security Events:</strong> ${(d.event_ids || []).map(e => `<span class="status-badge running" style="margin-right:6px;">${e}</span>`).join('')}</div>
+      <div><strong>Network Artifacts:</strong> <span style="color:var(--text-secondary);">${esc(d.network || 'Standard C2 protocol')}</span></div>
+      <div><strong>Host Indicators:</strong> <span style="color:var(--text-secondary);">${esc(d.host || 'Process memory allocation')}</span></div>
+      <div><strong>Key Security Events:</strong> ${(d.event_ids || []).map(e => `<span class="status-badge running" style="margin-right:6px;">${esc(e)}</span>`).join('')}</div>
     `;
   }
 
@@ -432,8 +448,11 @@ async function initFleetRadar() {
       }
       (data.sessions || []).forEach(sess => {
         const tr = document.createElement('tr');
-        const isAlive = sess.is_alive !== false;
-        const badge = isAlive
+        const isAlive = sess.is_alive === true;
+        const unknown = sess.is_alive !== true && sess.is_alive !== false;
+        const badge = unknown
+          ? '<span class="status-badge warn" title="framework did not report liveness">UNKNOWN</span>'
+          : isAlive
           ? '<span class="status-badge running">● ALIVE</span>'
           : '<span class="status-badge warn" title="no check-in within framework window">STALE</span>';
         const procText = [sess.process, sess.pid ? 'pid ' + sess.pid : ''].filter(Boolean).join(' / ') || '-';
@@ -687,7 +706,6 @@ async function opsRunTask() {
     runBtn.disabled = false;
     return;
   }
-  const baseline = await opsTaskBaseline(sess);
   try {
     const res = await fetch('/api/ops/task', {
       method: 'POST',
@@ -720,7 +738,14 @@ async function opsRunTask() {
     // 10-30s), so /api/ops/task returns before any output exists. Poll the
     // results table for the NEW task id instead of leaving "queued".
     if (sess.backend === 'meridian' || sess.backend === 'adaptix') {
-      await opsPollResults(sess, cmd, baseline);
+      const taskId = data.task_id || (data.result || {}).task_id ||
+        (data.result || {}).queued;
+      if (!taskId) {
+        opsSetOutput('Task was accepted without a correlation ID; refusing to show unrelated output.', 'err');
+        meta.textContent = 'missing task ID';
+        return;
+      }
+      await opsPollResults(sess, cmd, String(taskId));
     }
   } catch (err) {
     opsSetOutput('Request failed: ' + err.message, 'err');
@@ -761,28 +786,10 @@ async function opsPollMythic(taskId, attempts = 12) {
     (attempts * 5) + 's';
 }
 
-// Snapshot the task ids that already exist for this session BEFORE queueing,
-// so polling can tell the operator's new result apart from older ones
-// (without this, a dead session shows a previous task's output as if it
-// were the reply - actively misleading).
-async function opsTaskBaseline(sess) {
-  if (sess.backend !== 'meridian' && sess.backend !== 'adaptix') return new Set();
-  try {
-    const url = '/api/ops/results?backend=' + encodeURIComponent(sess.backend) +
-      '&session_id=' + encodeURIComponent(sess.id);
-    const res = await fetch(url);
-    if (!res.ok) return new Set();
-    const data = await res.json();
-    return new Set((data.results || []).map(r => r.a_task_id || r.task_id).filter(Boolean));
-  } catch (err) {
-    return new Set();
-  }
-}
-
 // meridian/adaptix tasking is asynchronous: the agent answers on its next
-// tick, so the output only exists in the completed-task table afterwards.
-// Poll until a task id newer than the pre-queue snapshot carries output.
-async function opsPollResults(sess, cmd, baseline, attempts = 12) {
+// Poll the exact task id returned by the backend; no neighboring task can
+// satisfy this request even if it completed later or shares the command text.
+async function opsPollResults(sess, cmd, expectedTaskId, attempts = 12) {
   const meta = document.getElementById('ops-output-meta');
   const out = document.getElementById('ops-output');
   for (let i = 0; i < attempts; i++) {
@@ -797,7 +804,7 @@ async function opsPollResults(sess, cmd, baseline, attempts = 12) {
       const rows = (data.results || []).filter(r => {
         const id = r.a_task_id || r.task_id;
         const body = (r.a_message || r.a_text || r.stdout || '').trim();
-        return body && (!baseline || !baseline.has(id));
+        return body && String(id || '') === expectedTaskId;
       });
       if (!rows.length) continue;
       const text = rows.slice(0, 3).map(r => {
@@ -1188,7 +1195,7 @@ async function cfgLoad() {
       (data.env_lines || []).join('\n') || '(no stack-scope settings)';
   } catch (err) {
     wrap.innerHTML = '<p class="empty-row">Could not load configuration: ' +
-      err.message + '</p>';
+      esc(err.message) + '</p>';
   }
 }
 
@@ -1220,7 +1227,7 @@ function cfgRender() {
                        default: 'DEFAULT' }[src] || src.toUpperCase();
     row.innerHTML =
       '<div class="config-label">' +
-        '<strong>' + s.label + '</strong> ' +
+        '<strong>' + esc(s.label) + '</strong> ' +
         '<span class="status-badge ' + (stack ? 'stopped' : 'running') + '" ' +
         'title="' + (stack
           ? 'Read by the other containers at boot. Change here, then press "Render config for the stack" and restart them.'
@@ -1228,16 +1235,16 @@ function cfgRender() {
           (stack ? 'STACK' : 'PORTAL') + '</span>' +
         ' <span class="status-badge ' +
           (src === 'override' ? 'running' : 'stopped') + '">' +
-          srcLabel + '</span>' +
-        '<small class="config-help">' + s.help + '</small>' +
-        '<small class="config-env">env: ' + s.env + '</small>' +
+          esc(srcLabel) + '</span>' +
+        '<small class="config-help">' + esc(s.help) + '</small>' +
+        '<small class="config-env">env: ' + esc(s.env) + '</small>' +
       '</div>' +
       '<div class="config-input">' +
-        '<input type="text" class="code-input" data-cfg-key="' + key + '" ' +
-        'value="' + String(s.value).replace(/"/g, '&quot;') + '" ' +
-        'placeholder="' + String(s.default) + '">' +
+        '<input type="text" class="code-input" data-cfg-key="' + esc(key) + '" ' +
+        'value="' + esc(s.value) + '" ' +
+        'placeholder="' + esc(s.default) + '">' +
         '<div class="config-input-actions">' +
-          '<button class="btn btn-outline btn-sm" data-cfg-reset="' + key + '">Reset</button>' +
+          '<button class="btn btn-outline btn-sm" data-cfg-reset="' + esc(key) + '">Reset</button>' +
         '</div>' +
       '</div>';
     wrap.appendChild(row);

@@ -6,4 +6,5 @@ Docker/**/entrypoint.sh text eol=lf
 Docker/**/bootstrap.sh text eol=lf
 Docker/*.sh text eol=lf
 Docker/**/*.sh text eol=lf
+Docker/.env.example text eol=lf
 *.ps1 text eol=crlf

@@ -39,6 +39,12 @@ from typing import Any
 import labconfig
 
 RENDER_DIR = os.environ.get("LAB_RENDER_DIR", "/render")
+# Source templates must live outside RENDER_DIR: /render is a persistent
+# named volume, so image updates mounted underneath it are hidden by an older
+# volume. Keep the immutable inputs beside the application image instead.
+TEMPLATE_DIR = os.environ.get(
+    "LAB_TEMPLATE_DIR", os.path.join(os.path.dirname(__file__), "templates")
+)
 
 REDIRECTOR_CONF = os.path.join(RENDER_DIR, "redirector", "c2stack.conf")
 MERIDIAN_CONFIG = os.path.join(RENDER_DIR, "meridian", "config.json")
@@ -84,7 +90,20 @@ def _httpx_prefix() -> str:
 
 def _escape_regex(val: str) -> str:
     """Escape regex metacharacters in literal values used in Apache RewriteCond regexes."""
-    return re.sub(r"([.+*?[\]()^$\\])", r"\\\1", val)
+    if any(ord(char) < 32 or ord(char) == 127 for char in val):
+        raise RenderError("routing values cannot contain control characters")
+    # `re.escape` handles alternation, quantifiers, grouping, and anchors too.
+    # Apache's directive parser also treats unescaped spaces as argument
+    # separators, so quote those before placing the expression on one line.
+    return re.escape(val).replace(" ", r"\ ")
+
+
+def _header_name() -> str:
+    """Validate an environment- or UI-provided HTTP token before interpolation."""
+    value = labconfig.get("c2_header_name")
+    if not re.fullmatch(r"[A-Za-z0-9!#$%&'*+\-.^_`|~]+", value):
+        raise RenderError("C2 header name must be a valid HTTP token")
+    return value
 
 
 def _sliver_gate() -> str:
@@ -104,7 +123,7 @@ def _sliver_gate() -> str:
     sends the C2 header on the Sliver route.
     """
     if os.environ.get("SLIVER_HEADER_GATE", "off") == "on":
-        return r"%{HTTP:" + labconfig.get("c2_header_name") + r"} ^" + \
+        return r"%{HTTP:" + _header_name() + r"} ^" + \
             _escape_regex(labconfig.get("c2_header_value")) + r"$ [NC]"
     return r"%{REQUEST_URI} ^/"
 
@@ -116,15 +135,15 @@ def render_redirector(template: str) -> str:
     it is the one reference allowed to survive.
     """
     values: dict[str, str] = {
-        "C2_HEADER_NAME": labconfig.get("c2_header_name"),
+        "C2_HEADER_NAME": _header_name(),
         "C2_HEADER_VALUE": _escape_regex(labconfig.get("c2_header_value")),
         "SLIVER_HEADER_GATE": _sliver_gate(),
-        "MYTHIC_URI_PREFIX": labconfig.get("mythic_uri_prefix"),
-        "MYTHIC_HTTPX_URI_PREFIX": _httpx_prefix(),
-        "SLIVER_URI_PREFIX": labconfig.get("sliver_uri_prefix"),
-        "HAVOC_URI_PREFIX": labconfig.get("havoc_uri_prefix"),
-        "ADAPTIX_URI_PREFIX": labconfig.get("adaptix_uri_prefix"),
-        "MERIDIAN_URI_PREFIX": labconfig.get("meridian_uri_prefix"),
+        "MYTHIC_URI_PREFIX": _escape_regex(labconfig.get("mythic_uri_prefix")),
+        "MYTHIC_HTTPX_URI_PREFIX": _escape_regex(_httpx_prefix()),
+        "SLIVER_URI_PREFIX": _escape_regex(labconfig.get("sliver_uri_prefix")),
+        "HAVOC_URI_PREFIX": _escape_regex(labconfig.get("havoc_uri_prefix")),
+        "ADAPTIX_URI_PREFIX": _escape_regex(labconfig.get("adaptix_uri_prefix")),
+        "MERIDIAN_URI_PREFIX": _escape_regex(labconfig.get("meridian_uri_prefix")),
     }
     for name in BACKENDS:
         host, port = _backend(name)
@@ -176,6 +195,14 @@ def render_havoc_profile(template: str) -> str:
     time, so a wrong value here fails silently: beacons dial a dead address
     and nothing reports an error.
     """
+    operator_password = os.environ.get("HAVOC_OPERATOR_PASSWORD", "")
+    service_password = os.environ.get("HAVOC_SERVICE_PASSWORD", "")
+    if not operator_password or not service_password:
+        raise RenderError(
+            "HAVOC_OPERATOR_PASSWORD and HAVOC_SERVICE_PASSWORD must be configured"
+        )
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", operator_password + service_password):
+        raise RenderError("Havoc password values contain unsupported characters")
     values = {
         "VICTIM_REDIRECTOR_IP": labconfig.get("victim_redirector_ip"),
         "REDIRECTOR_HTTP_PORT": labconfig.get("redirector_http_port"),
@@ -183,6 +210,8 @@ def render_havoc_profile(template: str) -> str:
         "HAVOC_URI_PREFIX": labconfig.get("havoc_uri_prefix"),
         "C2_HEADER_NAME": labconfig.get("c2_header_name"),
         "C2_HEADER_VALUE": labconfig.get("c2_header_value"),
+        "HAVOC_OPERATOR_PASSWORD": operator_password,
+        "HAVOC_SERVICE_PASSWORD": service_password,
     }
     out = template
     for key, value in values.items():
@@ -224,7 +253,7 @@ def render_all(templates: dict[str, str] | None = None) -> dict[str, Any]:
     """
     results: dict[str, Any] = {"ok": True, "written": [], "errors": []}
 
-    tdir = os.path.join(RENDER_DIR, "templates")
+    tdir = TEMPLATE_DIR
 
     def _template(name: str) -> str | None:
         if templates and name in templates:

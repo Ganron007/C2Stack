@@ -4,7 +4,11 @@
 # the C2Stack redirector. Operator GUI client runs on Kali, not here.
 # ============================================================================
 
-FROM golang:1.25-bookworm AS base
+ARG GO_WIN7_COMMIT=7f6f947f37991ba5778c41ee093c8527560e4d9f
+ARG GO_TARBALL_SHA256=9fa5ffeda4170de60f67f3aa0f824e426421ba724c21e133c1e35d6159ca1bec
+
+FROM golang:1.25.14-bookworm@sha256:3b4a11519ad929d1e1d261a12cff056f0c85b735253d7d861346b9c6f8b36437 AS base
+ARG GO_WIN7_COMMIT
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -13,7 +17,9 @@ RUN apt-get update && \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # go-win7 toolchain for Windows 7/Server 2008 R2 agent compatibility
-RUN git clone https://github.com/Adaptix-Framework/go-win7 /usr/lib/go-win7 && \
+RUN git init /usr/lib/go-win7 && \
+    git -C /usr/lib/go-win7 fetch --depth=1 https://github.com/Adaptix-Framework/go-win7.git "$GO_WIN7_COMMIT" && \
+    git -C /usr/lib/go-win7 checkout --detach FETCH_HEAD && \
     mkdir -p /usr/lib/go-win7/pkg/include && \
     cd /usr/lib/go-win7/src/runtime && \
     for f in *.h; do ln -sf /usr/lib/go-win7/src/runtime/$f /usr/lib/go-win7/pkg/include/$f; done
@@ -30,7 +36,9 @@ COPY src/ .
 RUN make server && make extenders
 
 # ---- Runtime Stage ----
-FROM debian:bookworm-slim AS runtime
+FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS runtime
+ARG GO_WIN7_COMMIT
+ARG GO_TARBALL_SHA256
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates mingw-w64 g++-mingw-w64 gcc g++ make openssl wget git bash \
@@ -38,13 +46,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Go runtime for agent generation at runtime
 RUN wget -q https://go.dev/dl/go1.25.4.linux-amd64.tar.gz -O /tmp/go.tar.gz && \
+    echo "$GO_TARBALL_SHA256  /tmp/go.tar.gz" | sha256sum -c - && \
     rm -rf /usr/local/go && \
     tar -C /usr/local -xzf /tmp/go.tar.gz && \
     ln -s /usr/local/go/bin/go /usr/local/bin/go && \
     rm /tmp/go.tar.gz
 
 # go-win7 for agent cross-compilation
-RUN git clone https://github.com/Adaptix-Framework/go-win7 /usr/lib/go-win7 && \
+RUN git init /usr/lib/go-win7 && \
+    git -C /usr/lib/go-win7 fetch --depth=1 https://github.com/Adaptix-Framework/go-win7.git "$GO_WIN7_COMMIT" && \
+    git -C /usr/lib/go-win7 checkout --detach FETCH_HEAD && \
     mkdir -p /usr/lib/go-win7/pkg/include && \
     cd /usr/lib/go-win7/src/runtime && \
     for f in *.h; do ln -sf /usr/lib/go-win7/src/runtime/$f /usr/lib/go-win7/pkg/include/$f; done
@@ -58,10 +69,9 @@ COPY --from=builder /src/dist/ssl_gen.sh /app/ssl_gen.sh
 COPY --from=builder /src/dist/profile.yaml /app/profile.yaml
 COPY --from=builder /src/dist/404page.html /app/404page.html
 
-RUN mkdir -p /app/data && \
-    chmod +x /app/ssl_gen.sh /app/adaptixserver && \
-    printf '#!/usr/bin/env bash\nset -e\n\ncd /app\nif [ ! -f /app/server.rsa.crt ] || [ ! -f /app/server.rsa.key ]; then\n    echo "[adaptix] Generating self-signed teamserver certificate..."\n    openssl req -x509 -nodes -newkey rsa:2048 -keyout /app/server.rsa.key -out /app/server.rsa.crt -days 3650 -subj "/C=US/ST=State/L=City/O=AdaptixC2/CN=localhost"\nfi\necho "[adaptix] Starting Adaptix C2 Server..."\necho "[adaptix] Teamserver listening on :4321 (operators), HTTP C2 via redirector on :80"\nexec /app/adaptixserver -profile /app/profile.yaml\n' > /app/entrypoint.sh && \
-    chmod +x /app/entrypoint.sh
+RUN mkdir -p /app/data && chmod +x /app/ssl_gen.sh /app/adaptixserver
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 EXPOSE 4321 80
 

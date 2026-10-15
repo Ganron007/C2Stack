@@ -9,8 +9,9 @@ Verified live 2026-10-03 against c2stack-adaptix-1.
 
 Two things that are easy to get wrong and cost real debugging time:
   * Auth uses the TEAMserver password, not the per-operator one, whenever
-    `profile.yaml` sets `only_password: true`. `operator1/pass1` fails with a
-    bare 404; `operator1/pass` (any username) returns an access_token.
+    `profile.yaml` sets `only_password: true`. The username is still required;
+    the password comes from `ADAPTIX_TEAMSERVER_PASSWORD` in the ignored
+    `Docker/.env`; an incorrect value receives the 404 decoy response.
   * An auth or route failure returns the Adaptix 404 decoy page, NOT 401/403.
     A 404 therefore means "rejected", not "missing".
 """
@@ -19,6 +20,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import ssl
 import urllib.error
 import urllib.request
@@ -32,7 +34,7 @@ except ImportError:  # flat module layout (app.py imports it directly)
 ADAPTIX_HOST = "adaptix"
 ADAPTIX_PORT = 4321
 ADAPTIX_ENDPOINT = "/endpoint"
-ADAPTIX_PASSWORD = "pass"  # teamserver password (only_password: true)
+ADAPTIX_PASSWORD_ENV = "ADAPTIX_TEAMSERVER_PASSWORD"
 ADAPTIX_OPERATOR = "operator1"
 
 _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -107,10 +109,10 @@ class AdaptixClient:
                  endpoint: str = ADAPTIX_ENDPOINT) -> None:
         self.base = f"https://{host}:{port}{endpoint}"
         self._token: str | None = None
-        # The container generates its own self-signed cert in entrypoint.sh.
-        self._ssl = ssl.create_default_context()
-        self._ssl.check_hostname = False
-        self._ssl.verify_mode = ssl.CERT_NONE
+        ca_file = os.environ.get("ADAPTIX_CA_FILE", "/trust/adaptix/adaptix.crt")
+        self._ssl = ssl.create_default_context(
+            cafile=ca_file if os.path.isfile(ca_file) else None
+        )
 
     def _request(self, method: str, path: str, payload: dict[str, Any] | None = None,
                  timeout: int = 60, raw: bool = False) -> Any:
@@ -145,9 +147,14 @@ class AdaptixClient:
                 f"adaptix {method} {path}: non-JSON response ({exc}): {text[:120]}") from exc
 
     def login(self) -> str:
+        password = os.environ.get(ADAPTIX_PASSWORD_ENV, "")
+        if not password:
+            raise BackendError(
+                f"{ADAPTIX_PASSWORD_ENV} is unset; run docker-bootstrap.sh or configure it in Docker/.env"
+            )
         out = self._request("POST", "/login", {
             "username": ADAPTIX_OPERATOR,
-            "password": ADAPTIX_PASSWORD,
+            "password": password,
             "version": "v1.2",
         })
         token = out.get("access_token") if isinstance(out, dict) else None

@@ -3,7 +3,7 @@
 # ============================================================================
 
 # Stage 1: Build static Go implants (Zero external dependencies)
-FROM golang:1.24-alpine AS builder
+FROM golang:1.24.13-alpine@sha256:8bee1901f1e530bfb4a7850aa7a479d17ae3a18beb6e09064ed54cfd245b7191 AS builder
 
 WORKDIR /src/implant
 COPY implant/ .
@@ -13,7 +13,7 @@ RUN mkdir -p /payloads \
     && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o /payloads/parallax-windows-amd64.exe .
 
 # Stage 2: Runtime Meridian Server
-FROM python:3.12-slim
+FROM python:3.12.15-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
 
 ENV PYTHONUNBUFFERED=1 \
     DEBIAN_FRONTEND=noninteractive \

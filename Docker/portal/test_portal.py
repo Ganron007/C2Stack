@@ -4,9 +4,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 import labconfig
+import c2backends as cb
 from app import _havoc_fields, _vhost_fields, app
 
-client = TestClient(app)
+client = TestClient(app, client=("127.0.0.1", 50000))
 
 
 @pytest.fixture(autouse=True)
@@ -249,10 +250,8 @@ def test_rendered_endpoint_reports_missing_gracefully():
 def test_container_action_unavailable_when_missing(monkeypatch):
     monkeypatch.setattr("app.get_docker_containers", lambda: [])
     r = client.post("/api/containers/sliver/action?action=restart")
-    assert r.status_code == 200
-    data = r.json()
-    assert data["status"] == "unavailable"
-    assert "not found" in data["message"].lower()
+    assert r.status_code == 404
+    assert "no unambiguous container" in r.json()["detail"].lower()
 
 
 def test_container_selection_by_compose_labels():
@@ -279,10 +278,21 @@ def test_container_selection_by_compose_labels():
     matched = _find_service_container(mock_containers, "sliver", project_name="c2stack")
     assert matched is not None
     assert matched["Id"] == "c2stack_id"
+    assert _find_service_container(mock_containers[:1], "sliver", project_name="c2stack") is None
+    duplicate = mock_containers[1] | {"Id": "second_owned", "Names": ["/c2stack-sliver-2"]}
+    assert _find_service_container(
+        mock_containers[1:] + [duplicate], "sliver", project_name="c2stack"
+    ) is None
 
 
 def test_operator_auth_enforcement(monkeypatch):
     monkeypatch.setenv("C2STACK_API_KEY", "secret-test-key-123")
+
+    dispatched = []
+    monkeypatch.setattr(
+        "havoc_client.HavocClient",
+        lambda: dispatched.append("havoc") or None,
+    )
 
     # Unauthenticated mutating request must fail with 401
     r = client.post("/api/config", json={"values": {"c2_header_value": "tok"}})
@@ -293,6 +303,13 @@ def test_operator_auth_enforcement(monkeypatch):
     r_probe = client.post("/api/ops/probe", json={"url_path": "/", "headers": {}, "method": "GET"})
     assert r_probe.status_code == 401
     assert "unauthorized" in r_probe.json()["detail"].lower()
+
+    r_task = client.post(
+        "/api/ops/task",
+        json={"backend": "havoc", "session_id": "demo", "command": "whoami"},
+    )
+    assert r_task.status_code == 401
+    assert dispatched == []
 
     # Tampered / mismatched key must fail with 401
     r_bad = client.post(
@@ -311,7 +328,7 @@ def test_operator_auth_enforcement(monkeypatch):
     assert r.status_code == 200
     assert r.json()["ok"] is True
 
-    # Valid Bearer token must succeed
+    # Valid Bearer token must succeed.
     r = client.post(
         "/api/config",
         json={"values": {"c2_header_value": "tok"}},
@@ -320,8 +337,85 @@ def test_operator_auth_enforcement(monkeypatch):
     assert r.status_code == 200
 
 
+def test_keyless_portal_is_loopback_only(monkeypatch):
+    monkeypatch.delenv("C2STACK_API_KEY", raising=False)
+    monkeypatch.delenv("PORTAL_API_KEY", raising=False)
+    remote = TestClient(app, client=("192.0.2.44", 50000))
+    assert remote.get("/api/status").status_code == 401
+    assert client.get("/api/status").status_code == 200
+
+
+def test_mythic_client_fails_closed_without_configured_password(monkeypatch):
+    monkeypatch.setattr(cb, "MYTHIC_PASS", "")
+
+    def unexpected_request(*_args, **_kwargs):
+        raise AssertionError("Mythic network request made without credentials")
+
+    monkeypatch.setattr(cb.urllib.request, "urlopen", unexpected_request)
+    with pytest.raises(cb.BackendError, match="MYTHIC_PASSWORD is required"):
+        cb.MythicClient()._login()
+
+
+def test_deprecated_havoc_get_never_dispatches(monkeypatch):
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("GET task route dispatched")
+
+    monkeypatch.setattr("havoc_client.HavocClient", forbidden)
+    response = client.get(
+        "/api/ops/havoc/task", params={"demon_id": "demo1", "command": "whoami"}
+    )
+    assert response.status_code == 405
+
+
 def test_havoc_task_post_route():
     # POST /api/ops/havoc/task requires demon_id and command
     r = client.post("/api/ops/havoc/task", json={"demon_id": "demo1", "command": "whoami", "wait": 1})
-    # Since teamserver is not running live, expect 502 BackendError, NOT 404 or 405 Method Not Allowed
+    # Since teamserver is not running live, expect 502, not a missing POST route.
     assert r.status_code == 502
+
+
+def test_adaptix_task_route_returns_exact_correlation_id(monkeypatch):
+    monkeypatch.delenv("C2STACK_API_KEY", raising=False)
+    monkeypatch.delenv("PORTAL_API_KEY", raising=False)
+
+    class FakeAdaptixClient:
+        def login(self):
+            return "token"
+
+        def agent_command_raw(self, _agent_id, _command):
+            return {"ok": True, "task_id": "task-41"}
+
+        def completed_tasks(self, _agent_id, limit=10):
+            raise AssertionError("task acceptance response must not depend on result polling")
+
+    monkeypatch.setattr("adaptix_client.AdaptixClient", FakeAdaptixClient)
+    response = client.post(
+        "/api/ops/task",
+        json={"backend": "adaptix", "session_id": "agent-1", "command": "shell whoami"},
+    )
+    assert response.status_code == 200
+    assert response.json()["task_id"] == "task-41"
+    assert response.json()["result"]["task_id"] == "task-41"
+
+
+def test_accepted_mythic_task_is_not_failed_by_result_poll_error(monkeypatch):
+    monkeypatch.delenv("C2STACK_API_KEY", raising=False)
+    monkeypatch.delenv("PORTAL_API_KEY", raising=False)
+
+    class FakeMythicClient:
+        def post(self, _path, _payload):
+            return {"id": 901, "status": "submitted"}
+
+    def fail_if_polled(_task_id):
+        raise cb.BackendError("temporary Mythic output database failure")
+
+    monkeypatch.setattr(cb, "MythicClient", FakeMythicClient)
+    monkeypatch.setattr(cb, "mythic_task_output", fail_if_polled)
+    response = client.post(
+        "/api/ops/task",
+        json={"backend": "mythic", "session_id": "17", "command": "whoami", "wait": 1},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["task_id"] == 901
+    assert response.json()["result"]["status"] == "submitted"

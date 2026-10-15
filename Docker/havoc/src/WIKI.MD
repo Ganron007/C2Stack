@@ -307,11 +307,11 @@ Multiple users can be added to the Teamserver with the Operators directive:
 ```hcl
 Operators {
     user "5pider" {
-        Password = "password1234"
+        Password = "__SET_A_UNIQUE_PASSWORD__"
     }
 
     user "Neo" {
-        Password = "password1234"
+        Password = "__SET_A_UNIQUE_PASSWORD__"
     }
 }
 ```

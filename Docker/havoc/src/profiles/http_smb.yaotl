@@ -11,11 +11,11 @@ Teamserver {
 
 Operators {
     user "5pider" {
-        Password = "password1234"
+        Password = "__SET_A_UNIQUE_PASSWORD__"
     }
 
     user "Neo" {
-        Password = "password1234"
+        Password = "__SET_A_UNIQUE_PASSWORD__"
     }
 }
 

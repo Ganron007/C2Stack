@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.12.15-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
 
 WORKDIR /app
 
@@ -15,6 +15,7 @@ RUN apt-get update -qq \
         -o /tmp/docker.tgz \
     && tar xzf /tmp/docker.tgz -C /tmp \
     && mv /tmp/docker/docker /usr/local/bin/docker \
+    && echo "fce9b87ce16bc531383c9163eac43c78699cedc6ef332d78a67ca3673476b518  /usr/local/bin/docker" | sha256sum -c - \
     && rm -rf /tmp/docker /tmp/docker.tgz \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
@@ -34,13 +35,12 @@ COPY portal/app.py portal/c2backends.py portal/adaptix_client.py \
      portal/labconfig.py portal/lagrender.py ./
 COPY portal/static/ ./static/
 
-# Templates the Lab Config tab renders from. The portal is the single writer
-# of the rendered output in /render; the consumers mount that read-only.
-# These stay as build context so the repo copy remains the source of truth -
-# render_all() reads them from /render/templates.
-RUN mkdir -p /render/templates
-COPY redirector/apache/c2stack.conf.template /render/templates/
-COPY havoc/havoc.yaotl /render/templates/
+# Immutable source templates live in the image, outside /render. /render is a
+# persistent shared volume for generated configs; placing templates beneath
+# it lets an older volume mask new image templates indefinitely.
+RUN mkdir -p /app/templates
+COPY redirector/apache/c2stack.conf.template /app/templates/
+COPY havoc/havoc.yaotl /app/templates/
 
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8000

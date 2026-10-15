@@ -2,7 +2,7 @@
 # C2Stack — Docker Practice Lab
 # Redirector + Sliver + Havoc (default) + Mythic + Adaptix (profile-gated).
 # The Kali VM is the operator workstation (runs sliver-client / havoc client /
-# Adaptix Qt GUI / browser to Mythic UI).
+# Adaptix Qt GUI / Mythic REST API).
 #
 # Default (lightweight):
 #   docker compose --env-file .env up -d --build
@@ -14,9 +14,11 @@
 #   docker compose --env-file .env --profile mythic --profile adaptix up -d --build
 #
 # Networks:
-#   c2_edge  - redirector publishes its victim-facing port here
-#   c2_core  - internal back-channel; C2 frameworks are only reachable through
-#              the redirector (no direct internet egress)
+#   c2_edge  - non-internal bridge used by the redirector and framework
+#              services; several operator/control ports are also host-published
+#   c2_core  - internal back-channel with no external route of its own
+# Framework services are dual-homed, so c2_core does not remove their egress
+# through c2_edge or protect published control ports. Apply host/network ACLs.
 # ============================================================================
 
 name: c2stack
@@ -33,6 +35,11 @@ volumes:
   sliver_data:
   havoc_data:
   adaptix_data:
+  # Public teamserver certificates are shared only with the portal. Each
+  # framework gets an isolated trust volume so a compromised service cannot
+  # replace the certificate the portal uses to authenticate its peer.
+  havoc_trust:
+  adaptix_trust:
   meridian_data:
   portal_config:
   # Config files the portal renders for the sibling containers (Apache vhost,
@@ -127,8 +134,11 @@ services:
       HAVOC_URI_PREFIX: ${HAVOC_URI_PREFIX:-/edge/cache/assets}
       C2_HEADER_NAME: ${C2_HEADER_NAME:-X-Request-ID}
       C2_HEADER_VALUE: ${C2_HEADER_VALUE:-cadre-c2}
+      HAVOC_OPERATOR_PASSWORD: ${HAVOC_OPERATOR_PASSWORD:-}
+      HAVOC_SERVICE_PASSWORD: ${HAVOC_SERVICE_PASSWORD:-}
     volumes:
       - havoc_data:/opt/havoc/teamserver/data
+      - havoc_trust:/trust
       # The repo profile is a NEUTRAL template: every network value is an
       # __UPPER_SNAKE__ token. The entrypoint renders them from the
       # environment above into the data volume at every start, so neither the
@@ -160,7 +170,7 @@ services:
   # the redirector routes /cdn/media/stream to it.
   # ------------------------------------------------------------------
   mythic_server:
-    image: ghcr.io/its-a-feature/mythic_server:v3.4.0.61
+    image: ghcr.io/its-a-feature/mythic_server:v3.4.0.61@sha256:cb14c0cfa7999cc57496421f33efc5515f77835769f29935e86cf39c16792697
     profiles: ["mythic"]
     ports:
       - "${MYTHIC_UI_PORT}:17443"
@@ -174,13 +184,13 @@ services:
       POSTGRES_PORT: "5432"
       POSTGRES_DB: mythic_db
       POSTGRES_USER: mythic_user
-      POSTGRES_PASSWORD: mythic
+      POSTGRES_PASSWORD: ${MYTHIC_DB_PASSWORD:?Run docker-bootstrap to generate MYTHIC_DB_PASSWORD}
       RABBITMQ_HOST: mythic_rabbitmq
       RABBITMQ_PORT: "5672"
       RABBITMQ_USER: mythic_user
-      RABBITMQ_PASSWORD: mythic
+      RABBITMQ_PASSWORD: ${MYTHIC_RABBITMQ_PASSWORD:?Run docker-bootstrap to generate MYTHIC_RABBITMQ_PASSWORD}
       MYTHIC_ADMIN_USER: mythic_admin
-      MYTHIC_ADMIN_PASSWORD: mythic
+      MYTHIC_ADMIN_PASSWORD: ${MYTHIC_ADMIN_PASSWORD:?Run docker-bootstrap to generate MYTHIC_ADMIN_PASSWORD}
     networks:
       - c2_core
       - c2_edge
@@ -188,14 +198,21 @@ services:
 
   # Apollo payload-type container (self-registers with the server over
   # RabbitMQ). mythic-container 0.6.14 reads connection config ONLY from
-  # rabbitmq_config.json in the working dir (/Mythic) - env vars do not
-  # affect the broker (Dynaconf has no envvar prefix), so the single-file
-  # bind mount is the whole mechanism.
+  # rabbitmq_config.json in the working dir (/Mythic). Bootstrap renders the
+  # ignored runtime file with the generated broker credential.
   mythic_apollo:
-    image: ghcr.io/mythicagents/apollo:v0.0.1.19
+    image: ghcr.io/mythicagents/apollo:v0.0.1.19@sha256:0f4c0939afc38c537f4123db88ff8d40a96ddb0a55daed1a1c3cdf8f681e5cd6
     profiles: ["mythic"]
     volumes:
-      - ./mythic/apollo/rabbitmq_config.json:/Mythic/rabbitmq_config.json:ro
+      # Bootstrap must render this file first. Disable Compose's default
+      # create-host-path behavior so a missing file cannot become a directory
+      # and fail later as an opaque OCI file/directory mount error.
+      - type: bind
+        source: ./mythic/apollo/rabbitmq_config.generated.json
+        target: /Mythic/rabbitmq_config.json
+        read_only: true
+        bind:
+          create_host_path: false
       # Upstream builder writes keying build-params into Config.cs without C#
       # escaping, so any registry path (always has backslashes) fails the
       # dotnet build with CS1009. Patched copy: see mythic/apollo/README.md.
@@ -219,11 +236,11 @@ services:
   # rabbitmq_config.json mount needed. Serves the actual HTTP listener on :80
   # that agents call back to; the redirector proxies /cdn/media/stream here.
   mythic_http:
-    image: ghcr.io/mythicc2profiles/http:v0.0.3.2
+    image: ghcr.io/mythicc2profiles/http:v0.0.3.2@sha256:df9d8db67c7a09e7004b15a937f36b921e1a6f4dacb86b8bca2dba24ab3b9eac
     profiles: ["mythic"]
     environment:
       RABBITMQ_HOST: mythic_rabbitmq
-      RABBITMQ_PASSWORD: mythic
+      RABBITMQ_PASSWORD: ${MYTHIC_RABBITMQ_PASSWORD:?Run docker-bootstrap to generate MYTHIC_RABBITMQ_PASSWORD}
       MYTHIC_SERVER_HOST: mythic_server
       MYTHIC_SERVER_GRPC_PORT: "17444"
       # REST port for FILE-type build parameters. httpx pulls its
@@ -246,11 +263,11 @@ services:
   # mythic_http, but its listener is :82 (its config.json) and it is routed by
   # its own prefix (/media/uploads) so both profiles can be live at once.
   mythic_httpx:
-    image: ghcr.io/mythicc2profiles/httpx:v0.0.0.20
+    image: ghcr.io/mythicc2profiles/httpx:v0.0.0.20@sha256:374f1250246e0c7ce86a21ba5e78e9b8297298df5096cb7fe04ffc834029d475
     profiles: ["mythic"]
     environment:
       RABBITMQ_HOST: mythic_rabbitmq
-      RABBITMQ_PASSWORD: mythic
+      RABBITMQ_PASSWORD: ${MYTHIC_RABBITMQ_PASSWORD:?Run docker-bootstrap to generate MYTHIC_RABBITMQ_PASSWORD}
       MYTHIC_SERVER_HOST: mythic_server
       MYTHIC_SERVER_GRPC_PORT: "17444"
       # httpx needs the REST port too: its config-check RPC reads the FILE-type
@@ -273,11 +290,11 @@ services:
     restart: unless-stopped
 
   mythic_postgres:
-    image: postgres:15
+    image: postgres:15.15@sha256:c961aa287d8698297cb26cdfadfbe9fd2cbaf77e53cfffe9636e8d8a1e4d842c
     profiles: ["mythic"]
     environment:
       POSTGRES_USER: mythic_user
-      POSTGRES_PASSWORD: mythic
+      POSTGRES_PASSWORD: ${MYTHIC_DB_PASSWORD:?Run docker-bootstrap to generate MYTHIC_DB_PASSWORD}
       POSTGRES_DB: mythic_db
     volumes:
       - mythic_postgres:/var/lib/postgresql/data
@@ -286,11 +303,11 @@ services:
     restart: unless-stopped
 
   mythic_rabbitmq:
-    image: rabbitmq:3-management
+    image: rabbitmq:3.12.11-management@sha256:e582c0bc7766f3342496d8485efb5a1df782b5ce3886ad017e2eaae442311f69
     profiles: ["mythic"]
     environment:
       RABBITMQ_DEFAULT_USER: mythic_user
-      RABBITMQ_DEFAULT_PASS: mythic
+      RABBITMQ_DEFAULT_PASS: ${MYTHIC_RABBITMQ_PASSWORD:?Run docker-bootstrap to generate MYTHIC_RABBITMQ_PASSWORD}
       RABBITMQ_DEFAULT_VHOST: mythic_vhost
     networks:
       - c2_core
@@ -309,8 +326,11 @@ services:
       # GPL-3.0). Builds server + extenders; the Qt GUI client runs on Kali.
       context: ./adaptix
     profiles: ["adaptix"]
+    environment:
+      ADAPTIX_TEAMSERVER_PASSWORD: ${ADAPTIX_TEAMSERVER_PASSWORD:-}
     volumes:
       - adaptix_data:/app/data
+      - adaptix_trust:/trust
     ports:
       # Explicit 0.0.0.0 host binding: a bare "${PORT}:4321" mapping renders
       # as a no-host-IP publish that Docker Desktop fails to proxy.
@@ -387,6 +407,8 @@ services:
       # consumers mount it read-only, so a compromised backend cannot rewrite
       # the routing policy that gates it.
       - lab_render:/render
+      - havoc_trust:/trust/havoc:ro
+      - adaptix_trust:/trust/adaptix:ro
       # Source templates for the render. Copied in at build time below.
     environment:
       LAB_CONFIG_PATH: /data/lab-config.json
@@ -396,7 +418,7 @@ services:
       C2_HEADER_VALUE: ${C2_HEADER_VALUE:-cadre-c2}
       MYTHIC_ENDPOINT: http://mythic_server:17443
       MYTHIC_USERNAME: ${MYTHIC_ADMIN_USERNAME:-mythic_admin}
-      MYTHIC_PASSWORD: ${MYTHIC_ADMIN_PASSWORD:-mythic}
+      MYTHIC_PASSWORD: ${MYTHIC_ADMIN_PASSWORD:?Run docker-bootstrap to generate MYTHIC_ADMIN_PASSWORD}
       MYTHIC_DB_CONTAINER: c2stack-mythic_postgres-1
       VICTIM_SSH_TARGET: "${VICTIM_SSH_TARGET:-}"
       VICTIM_REDIRECTOR_IP: ${VICTIM_REDIRECTOR_IP:-192.168.100.1}
@@ -416,6 +438,10 @@ services:
       SLIVER_CTRL_PORT: ${SLIVER_CTRL_PORT:-31337}
       HAVOC_TS_PORT: ${HAVOC_TS_PORT:-40056}
       ADAPTIX_TS_PORT: ${ADAPTIX_TS_PORT:-4321}
+      HAVOC_OPERATOR_PASSWORD: ${HAVOC_OPERATOR_PASSWORD:-}
+      HAVOC_SERVICE_PASSWORD: ${HAVOC_SERVICE_PASSWORD:-}
+      ADAPTIX_TEAMSERVER_PASSWORD: ${ADAPTIX_TEAMSERVER_PASSWORD:-}
+      C2STACK_API_KEY: ${C2STACK_API_KEY:-${PORTAL_API_KEY:-}}
       MYTHIC_UI_PORT: ${MYTHIC_UI_PORT:-7443}
     ports:
       - "${PORTAL_BIND:-127.0.0.1}:${PORTAL_PORT:-8000}:8000"

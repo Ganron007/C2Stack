@@ -17,8 +17,8 @@ The practice build should still preserve these behaviors:
 - Victim-facing entry point remains separate from the real C2 backend.
 - Redirector logic still requires a valid header before proxying to the backend.
 - Mythic, Sliver, Havoc, Adaptix, and Meridian remain usable as distinct frameworks.
-- Loki-style "living off the cloud" C2 is *not implemented in this repo*; all C2Stack
-  agents egress through the redirector (HTTP) or the Meridian DNS listener.
+- Loki-style "living off the cloud" C2 is *not implemented in this repo*; target
+  agents call back through the redirector (HTTP) or Meridian's published DNS listener.
 - Operator state should persist across restarts.
 
 ## What Can Be Containerized
@@ -142,7 +142,8 @@ C2Stack/Docker/
 │   └── entrypoint.sh         # renders the template into the data volume at start
 ├── adaptix/                  # vendored Adaptix source (GPL-3.0) + Dockerfile (built in-repo)
 ├── mythic/                   # (optional) config + apollo sibling container wiring
-│   └── apollo/rabbitmq_config.json   # payload-type container self-registration config
+│   ├── apollo/rabbitmq_config.template.json   # non-secret payload self-registration template
+│   └── apollo/rabbitmq_config.generated.json # ignored runtime config rendered by bootstrap
 └── portal/                   # Flight Control dashboard (:8000) + tests
     ├── labconfig.py          # UI-editable lab settings store (override > env > default)
     └── test_labconfig.py     # validation/persistence rules for those settings
@@ -196,10 +197,12 @@ implants.
 
 ### Networks
 
-- `c2_edge` — the redirector publishes its victim-facing port here.
-- `c2_core` — `internal: true` back-channel. The C2 frameworks have **no** direct
-  internet egress and are only reachable through the redirector. The operator
-  reaches their UIs/control ports via the host-published ports.
+- `c2_edge` — a non-internal Docker bridge attached to the redirector and the
+  framework/portal services. Several framework and operator-control ports are
+  host-published, so these services can have direct host access and internet egress.
+- `c2_core` — an `internal: true` back-channel with no external route of its own.
+  Services that also join `c2_edge` retain that network's access; this network
+  does not isolate their published ports. Apply host/network ACLs to control access.
 
 ### Run it
 
@@ -221,9 +224,18 @@ cd C2Stack/Docker
 ./docker-bootstrap.sh --all          # all four frameworks
 ```
 
+The bootstrap generates per-deployment Havoc, Adaptix, Mythic admin/database/
+RabbitMQ, and Kali VNC passwords in the ignored `Docker/.env`. It does not
+print them. Run it once before starting optional profiles directly with Compose.
+Mythic persists database and admin credentials; if the bootstrap detects an
+existing database volume and Mythic credentials are missing, it stops without
+changing them. Restore the credentials matching that installation in `.env`
+before proceeding. Preserve the volume and follow Mythic's credential-rotation
+procedure before changing persisted credentials.
+
 ### Verified state (Oct 2026 — full cold boot)
 
-Cold boot re-validated on 2026-10-02 from a host shutdown (all 11 containers had
+Historical cold-boot verification from 2026-10-02 (all 11 containers had
 been SIGKILLed, exit 137). Brought up with
 `docker compose --env-file .env --profile mythic --profile adaptix up -d`
 (equivalently `.\docker-bootstrap.ps1 -All -NoBuild`); no rebuild needed, all
@@ -270,15 +282,15 @@ images and the named volumes were intact. Re-verified after boot:
   is on `c2_edge` because Docker drops port publishing for containers that sit only
   on the internal `c2_core` network (see the compose comment). All listener/agent
   extenders ship in-image (`/app/extenders`: HTTP/SMB/TCP/DNS + beacon/gopher agents);
-  operator connects with the Qt packet client on Kali (teamserver password `pass`,
-  operator1 `pass1` — set in `/app/profile.yaml`), creates the HTTP Beacon listener
+  operator connects with the Qt packet client on Kali (teamserver password from
+  `ADAPTIX_TEAMSERVER_PASSWORD` in the ignored `.env`), creates the HTTP Beacon listener
   on :80 with URI `/api/v1/sync` (redirector prefix) and builds beacons — beacon
   compilation happens CLIENT-side in the packet GUI (the Go/mingw/gcc/make/git
   toolchains in the image are the documented teamserver runtime deps).
 - **Mythic** — server+postgres+rabbitmq healthy (latest stable 3.4.0.61). The Apollo
   payload type is registered **without mythic-cli**: it self-registers over RabbitMQ
-  sync queues as a sibling container (`mythic_apollo`, owns
-  `Docker/mythic/apollo/rabbitmq_config.json`). The HTTP C2 profile is resolved too —
+  sync queues as a sibling container (`mythic_apollo`, reads the ignored runtime
+  config rendered from `MYTHIC_RABBITMQ_PASSWORD`). The HTTP C2 profile is resolved too —
   as a mixed Go/Python ecosystem: the `http` profile container
   (`ghcr.io/mythicc2profiles/http:v0.0.3.2`, `mythic_http` service) self-registers the
   same way and serves the agent-facing :80 listener. REST `/auth` + webhooks verified
@@ -421,7 +433,8 @@ docker exec c2stack-meridian-1 ls /opt/meridian/payloads
 ### Known tradeoffs vs the VM design
 
 - Container isolation is weaker than the hypervisor trust boundary between redirector
-  and C2 backend. `c2_core` being `internal` recovers most of the egress isolation.
+  and C2 backend. `c2_core` isolates its own subnet, while dual-homed services still
+  have `c2_edge` access and published control ports.
 - Mythic and Adaptix are profile-gated to keep the default stack lightweight. Mythic
   pulls upstream images; Adaptix builds from source (first build ~5-10 min).
 - Havoc is built from source at image-build time (needs network); Sliver pulls a

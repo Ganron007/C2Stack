@@ -39,8 +39,8 @@ In modern adversary simulation, red teaming, and threat hunting, **Command and C
                                    │                           │
                                    ▼                           ▼
                         ┌─────────────────────┐    ┌───────────────────────────┐
-                        │   CloudEdge CDN     │    │  2. ISOLATED c2_core NET  │
-                        │   Benign Decoy      │    │  (Zero Internet Egress)   │
+                        │   CloudEdge CDN     │    │  2. c2_core BACKCHANNEL  │
+                        │   Benign Decoy      │    │  (internal subnet only)   │
                         └─────────────────────┘    └─────────────┬─────────────┘
                                                                  │
          ┌─────────────────────┬───────────────────┬─────────────┴───────┬─────────────────────┐
@@ -59,13 +59,16 @@ In modern adversary simulation, red teaming, and threat hunting, **Command and C
 ### The Three Operational Layers:
 
 1. **The Edge Redirector Layer (`c2_edge`)**:
-   - The only public-facing container.
+   - The intended victim-facing HTTP callback entry point. Operator and framework
+     control ports are also host-published and must be protected separately.
    - Evaluates the incoming `X-Request-ID` header. If missing or altered (e.g., security researchers, internet scanners, or automated blue-team scrapers), Apache returns a legitimate **CloudEdge CDN Decoy Page**.
    - Valid requests are reverse-proxied over the internal Docker network to the matching framework according to URI prefix.
 
-2. **The Isolated Core Layer (`c2_core`)**:
-   - Internal bridge network with `internal: true` (zero direct internet route).
-   - Teamservers cannot accidentally leak their real public IP or establish uncontrolled outbound connections.
+2. **The Core Back-channel (`c2_core`)**:
+   - Internal bridge network with `internal: true`; this subnet has no external route.
+   - Framework and portal services also join `c2_edge`, and several control ports are
+     host-published. Those services can have direct egress and host access; protect
+     them with host/network ACLs. The diagram shows callback routing, not a firewall boundary.
 
 3. **The Multi-Framework Matrix**:
    - Five purpose-built C2 frameworks providing a spectrum of capabilities from ultra-lightweight DNS tunneling to deep Windows kernel evasion.
@@ -139,9 +142,9 @@ Styled in C2Stack's signature **Warm Obsidian-Amber** palette (mirroring the log
 - **The Concept**: Why can't defenders easily find your C2 server by port-scanning your IP address?
 - **How to Practice in the UI**:
   1. Click **`🔴 Threat Hunter / Shodan (No Header)`** $\rightarrow$ Click **Inspect Flow**.
-     - *Observation*: Watch the red divert line fire. The Apache rewrite engine notices the missing `X-Request-ID` header and diverts the request to the **CloudEdge CDN Decoy Page** (HTTP 200). The internal C2 core remains 100% invisible.
+     - *Observation*: Watch the red divert line fire. The Apache rewrite engine notices the missing `X-Request-ID` header and serves the **CloudEdge CDN Decoy Page** (HTTP 200) for this request. This probe does not establish that separately published control ports or other paths are hidden.
   2. Click **`🟢 Victim Callback (Valid Header)`** $\rightarrow$ Click **Inspect Flow**.
-     - *Observation*: Watch the green verification line trigger. The header is authenticated, and the request is proxied into the internal `c2_core` container (e.g., `http://meridian:8080/gateway/v1/telemetry`) over Docker's internal DNS.
+     - *Observation*: Watch the green route line trigger. The configured header value matches the redirector rule, and this request is proxied to the selected framework service over Docker networking (e.g., `http://meridian:8080/gateway/v1/telemetry`). The header is a routing condition, not operator or agent authentication.
   3. Click **`🟡 Valid Header (Unknown URI)`**.
      - *Observation*: Observe how path-prefix routing isolates frameworks, returning an intentional 404 for non-matching endpoints.
 
@@ -423,7 +426,7 @@ tasking, results — with no Qt client, using the official REST API.
    ```bash
    curl -sk -X POST https://<C2STACK_IP>:4321/endpoint/login \
      -H 'Content-Type: application/json' \
-     -d '{"username":"operator1","password":"pass","version":"v1.2"}'
+     -d '{"username":"operator1","password":"<ADAPTIX_TEAMSERVER_PASSWORD from Docker/.env>","version":"v1.2"}'
    ```
    A wrong password returns the Adaptix **404 decoy page**, not 401 — a 404
    means "rejected", never "missing route".
@@ -587,7 +590,7 @@ Before dropping any executable, verify how the target machine perceives your C2 
    curl.exe -i http://192.168.100.1/
    ```
    - *Observation*: Notice the server returns `HTTP/1.1 200 OK` serving the **CloudEdge CDN Global Edge Cache** decoy page! If an analyst investigates the IP, they see only a harmless CDN.
-3. **Test 2 — Authenticated Implant Probe (With C2 Header)**:
+3. **Test 2 — Header-Matching Callback Route (With C2 Header)**:
    ```cmd
    curl.exe -i -H "X-Request-ID: cadre-c2" http://192.168.100.1/gateway/v1/telemetry/
    ```

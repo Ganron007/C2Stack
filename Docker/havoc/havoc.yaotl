@@ -15,19 +15,19 @@ Teamserver {
     Port = __HAVOC_TS_PORT__
 
     Build {
-        Compiler64 = "data/x86_64-w64-mingw32-cross/bin/x86_64-w64-mingw32-gcc"
-        Compiler86 = "data/i686-w64-mingw32-cross/bin/i686-w64-mingw32-gcc"
+        Compiler64 = "/usr/bin/x86_64-w64-mingw32-gcc"
+        Compiler86 = "/usr/bin/i686-w64-mingw32-gcc"
         Nasm = "/usr/bin/nasm"
     }
 }
 
 Operators {
     user "5pider" {
-        Password = "password1234"
+        Password = "__HAVOC_OPERATOR_PASSWORD__"
     }
 
     user "Neo" {
-        Password = "password1234"
+        Password = "__HAVOC_OPERATOR_PASSWORD__"
     }
 }
 
@@ -70,7 +70,7 @@ Listeners {
 # Required block in the yaotl config grammar (unused by the core flow).
 Service {
     Endpoint = "service-endpoint"
-    Password = "service-password"
+    Password = "__HAVOC_SERVICE_PASSWORD__"
 }
 
 Demon {

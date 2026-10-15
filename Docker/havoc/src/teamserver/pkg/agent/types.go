@@ -1,9 +1,9 @@
 package agent
 
 import (
-	"sync"
 	"net"
 	"os"
+	"sync"
 
 	"Havoc/pkg/common/parser"
 	"Havoc/pkg/packager"
@@ -53,6 +53,7 @@ type TeamServer interface {
 	AgentLastTimeCalled(AgentID string, LastCallback string, Sleep int, Jitter int, KillDate int64, WorkingHours int32)
 	AgentExist(AgentID int) bool
 	AgentConsole(DemonID string, CommandID int, Output map[string]string)
+	AgentConsoleWithTaskID(DemonID string, CommandID int, Output map[string]string, RequestID uint32)
 
 	EventAppend(event packager.Package) []packager.Package
 	EventBroadcast(ExceptClient string, pk packager.Package)
@@ -166,15 +167,14 @@ type Agent struct {
 	}
 	TaskedOnce bool
 
-
 	/* general value. leave it... */
 	BackgroundCheck bool
 }
 
 type AgentInfo struct {
 	// Connection Info
-	Listener    any
-	MagicValue  int
+	Listener   any
+	MagicValue int
 
 	SleepDelay   int
 	SleepJitter  int

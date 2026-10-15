@@ -129,21 +129,26 @@ func (ts *Teamserver) TsAgentCreate(agentCrc string, agentId string, beat []byte
 }
 
 func (ts *Teamserver) TsAgentCommand(agentName string, agentId string, clientName string, hookId string, handlerId string, cmdline string, ui bool, args map[string]any) error {
+	_, err := ts.TsAgentCommandWithID(agentName, agentId, clientName, hookId, handlerId, cmdline, ui, args)
+	return err
+}
+
+func (ts *Teamserver) TsAgentCommandWithID(agentName string, agentId string, clientName string, hookId string, handlerId string, cmdline string, ui bool, args map[string]any) (string, error) {
 	if !ts.agent_configs.Contains(agentName) {
-		return fmt.Errorf("agent %v not registered", agentName)
+		return "", fmt.Errorf("agent %v not registered", agentName)
 	}
 
 	agent, err := ts.getAgent(agentId)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if !agent.Active {
-		return fmt.Errorf("agent '%v' not active", agentId)
+		return "", fmt.Errorf("agent '%v' not active", agentId)
 	}
 
 	taskData, messageData, err := agent.Command(args)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if taskData.Type == adaptix.TASK_TYPE_LOCAL {
 		if taskData.Message != "" || taskData.ClearText != "" {
@@ -156,15 +161,16 @@ func (ts *Teamserver) TsAgentCommand(agentName string, agentId string, clientNam
 			taskData.Type = adaptix.TASK_TYPE_BROWSER
 		}
 
-		ts.TsTaskCreate(agentId, cmdline, clientName, taskData)
+		taskID := ts.TsTaskCreateWithID(agentId, cmdline, clientName, taskData)
 
 		if (taskData.Type != adaptix.TASK_TYPE_BROWSER) && (len(messageData.Message) > 0 || len(messageData.Text) > 0) {
 			ts.TsAgentConsoleOutput(agentId, messageData.Status, messageData.Message, messageData.Text, false)
 		}
+		return taskID, nil
 
 	}
 
-	return nil
+	return "", nil
 }
 
 func (ts *Teamserver) TsAgentProcessData(agentId string, bodyData []byte) error {

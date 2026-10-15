@@ -35,6 +35,7 @@ crash.*.log
 # Docker local env (copy from .env.example)
 C2Stack/Docker/.env
 .env
+Docker/mythic/apollo/rabbitmq_config.generated.json
 
 # Internal engineering notes (gitignored). Root-anchored on purpose: a bare
 # `internal/` also matches source trees like

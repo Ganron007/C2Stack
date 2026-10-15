@@ -22,7 +22,7 @@ from typing import Any
 MYTHIC_ENDPOINT = os.environ.get("MYTHIC_ENDPOINT", "http://mythic_server:17443")
 MYTHIC_UI_PORT = os.environ.get("MYTHIC_UI_PORT", "7443")
 MYTHIC_USER = os.environ.get("MYTHIC_USERNAME", "mythic_admin")
-MYTHIC_PASS = os.environ.get("MYTHIC_PASSWORD", "mythic")
+MYTHIC_PASS = os.environ.get("MYTHIC_PASSWORD", "")
 MYTHIC_DB_CONTAINER = os.environ.get("MYTHIC_DB_CONTAINER", "c2stack-mythic_postgres-1")
 
 MERIDIAN_HOST = os.environ.get("MERIDIAN_BACKEND_HOST", "meridian")
@@ -67,6 +67,8 @@ class MythicClient:
     def _login(self) -> str:
         if self._token:
             return self._token
+        if not MYTHIC_PASS:
+            raise BackendError("MYTHIC_PASSWORD is required; configure the generated Mythic admin password")
         body = json.dumps({"username": MYTHIC_USER, "password": MYTHIC_PASS}).encode()
         req = urllib.request.Request(
             f"{self.endpoint}/auth", data=body,

@@ -27,9 +27,11 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import os
 import ssl
 import time
 import uuid
+from pathlib import Path
 from typing import Any, Callable
 
 import websockets
@@ -43,7 +45,6 @@ HAVOC_HOST = "havoc"
 HAVOC_PORT = 40056
 HAVOC_PATH = "/havoc/"
 HAVOC_USER = "5pider"
-HAVOC_PASSWORD = "password1234"
 # Listener instance name baked into Docker/havoc/havoc.yaotl
 HAVOC_HTTP_LISTENER = "c2stack - http"
 
@@ -313,16 +314,16 @@ class HavocClient:
     """Async headless Havoc client. Use via `build_payload` / `login_and_scan`."""
 
     def __init__(self, host: str = HAVOC_HOST, port: int = HAVOC_PORT,
-                 user: str = HAVOC_USER, password: str = HAVOC_PASSWORD) -> None:
+                 user: str | None = None, password: str | None = None) -> None:
         self.host = host
         self.port = port
-        self.user = user
-        self.password = password
-        self.ssl_ctx = ssl.create_default_context()
-        # The teamserver generates a self-signed RSA cert at runtime and the
-        # GUI itself sets QSslSocket::VerifyNone, so this matches client behaviour.
-        self.ssl_ctx.check_hostname = False
-        self.ssl_ctx.verify_mode = ssl.CERT_NONE
+        self.user = user or os.environ.get("HAVOC_USER", HAVOC_USER)
+        self.password = password if password is not None else os.environ.get("HAVOC_OPERATOR_PASSWORD", "")
+        ca_file = os.environ.get("HAVOC_CA_FILE", "/trust/havoc/havoc.crt")
+        self.ssl_ctx = ssl.create_default_context(
+            cafile=ca_file if Path(ca_file).is_file() else None
+        )
+        self.tls_server_name = os.environ.get("HAVOC_TLS_SERVER_NAME", "0.0.0.0")
 
     # -------------------------------------------------------------- plumbing
     def _url(self) -> str:
@@ -387,7 +388,12 @@ class HavocClient:
           `idle_timeout` alone would sit until `hard_deadline` (5 minutes).
         * `hard_deadline` - the absolute wall-clock ceiling.
         """
+        if not self.password:
+            raise BackendError(
+                "HAVOC_OPERATOR_PASSWORD is unset; run docker-bootstrap.sh or configure it in Docker/.env"
+            )
         async with websockets.connect(self._url(), ssl=self.ssl_ctx,
+                                      server_hostname=self.tls_server_name,
                                       open_timeout=20, close_timeout=5,
                                       max_size=64 * 1024 * 1024) as ws:
             await ws.send(self._login_frame())
@@ -554,7 +560,7 @@ class HavocClient:
         request/response pairing, so everything arriving for this agent within
         `wait` seconds is collected.
         """
-        task_id = uuid.uuid4().hex[:12]
+        task_id = uuid.uuid4().hex[:8].upper()
         frame = self._task_frame(demon_id, task_id, command,
                                  str(CMD_PROC),
                                  {"ProcCommand": str(PROC_SUBCOMMAND_SHELL),
@@ -661,7 +667,7 @@ class HavocClient:
                 bits = (rest or "list").split()
                 if bits[0] not in ("list", "clear"):
                     raise BackendError("havoc: task takes list|clear")
-                task_id = uuid.uuid4().hex[:12]
+                task_id = uuid.uuid4().hex[:8].upper()
                 frame = self._task_frame(demon_id, task_id, line,
                                          "Teamserver", {"Command": "task::" + bits[0]})
                 chunks: list[str] = []
@@ -872,7 +878,7 @@ class HavocClient:
         # the teamserver (Go panic on the missing key -> container restart).
         if cmd_id == CMD_PROC_LIST:
             extra = {"FromProcessManager": "false"}
-        task_id = uuid.uuid4().hex[:12]
+        task_id = uuid.uuid4().hex[:8].upper()
         frame = self._task_frame(demon_id, task_id, line,
                                  str(cmd_id), extra)
         chunks: list[str] = []
@@ -884,7 +890,7 @@ class HavocClient:
                       wait: float = 20.0) -> dict[str, Any]:
         """File operations. `subcommand` is one of the Commands::FS verbs the
         GUI uses: pwd, ls, cd, cat, cp, mv, rm, mkdir (ConsoleInput.cc)."""
-        task_id = uuid.uuid4().hex[:12]
+        task_id = uuid.uuid4().hex[:8].upper()
         command = f"{subcommand} {arguments}".strip()
         frame = self._task_frame(demon_id, task_id, command, str(CMD_FS),
                                  {"SubCommand": subcommand, "Arguments": arguments})
@@ -893,7 +899,7 @@ class HavocClient:
 
     async def task_proc_list(self, demon_id: str,
                              wait: float = 20.0) -> dict[str, Any]:
-        task_id = uuid.uuid4().hex[:12]
+        task_id = uuid.uuid4().hex[:8].upper()
         frame = self._task_frame(demon_id, task_id, "ps", str(CMD_PROC_LIST))
         chunks: list[str] = []
         return await self._collect(demon_id, frame, "ps", task_id, chunks, wait)
@@ -922,6 +928,11 @@ class HavocClient:
             if head.get("Event") != EV_SESSION or body.get("SubEvent") != SE_SESSION_OUTPUT:
                 return None
             if (info.get("DemonID") or "") != demon_id:
+                return None
+            # The teamserver can replay or interleave fresh output from other
+            # tasks. A session ID and timestamp do not prove this result was
+            # produced by the command we just submitted.
+            if str(info.get("TaskID") or "") != task_id:
                 return None
             if not _fresh(head):
                 return None

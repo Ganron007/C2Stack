@@ -32,10 +32,10 @@ C2Stack runs a header-aware **Apache redirector** in front of five C2 frameworks
 
 1. **Callback Initiation**: A payload on a victim calls back to `http://<redirector-host>:<REDIRECTOR_HTTP_PORT>/<prefix>` with header `X-Request-ID: cadre-c2`, or sends UDP DNS TXT queries to `<redirector-host>:<MERIDIAN_DNS_PORT>` (default `15353`, mapped to the container's `5353/udp` — Windows mDNS occupies 5353 on the host).
 2. **Header Inspection**: The Apache redirector validates the header:
-   - **Valid Header**: Proxies to the matching C2 container on the isolated `c2_core` network based on the URI prefix.
-   - **Missing / Invalid Header**: Serves a benign **CloudEdge CDN Decoy Page** (shielding the teamservers from scanners and incident responders).
-3. **Network Isolation**: The C2 containers live on an internal `c2_core` network with **zero direct internet egress** and are only reachable through the redirector.
-4. **Out-of-band cloud C2 (Loki-style Azure Blob)**: *not part of this stack* — all C2Stack agents egress through the redirector (HTTP) or the Meridian DNS listener.
+   - **Valid Header**: Proxies to the matching C2 container over the Docker networks based on the URI prefix.
+   - **Missing / Invalid Header**: Serves a benign **CloudEdge CDN Decoy Page** for that redirector request. The decoy does not protect separately published operator ports.
+3. **Network Boundaries**: `c2_core` is an internal back-channel. Framework and portal services are also attached to the non-internal `c2_edge` network, and operator ports are host-published. They can have direct egress and direct host access, so protect those ports with host/network ACLs. The redirector is the intended victim-facing HTTP callback path; Meridian DNS is separately host-published.
+4. **Out-of-band cloud C2 (Loki-style Azure Blob)**: *not part of this stack*. Configured HTTP callbacks use the redirector and DNS callbacks use the separately published Meridian listener; the Docker network still permits service egress.
 
 ---
 
@@ -64,7 +64,13 @@ cd C2Stack/Docker
 ./docker-bootstrap.sh --all         # all frameworks
 ```
 
-This copies `.env.example` → `.env`, builds the images, and starts the stack.
+This copies `.env.example` → `.env`, generates unique framework, database,
+broker, and optional Kali VNC passwords into the ignored `.env` without
+printing them, then builds the images and starts the stack. Run the bootstrap
+before invoking Compose directly; Mythic and Kali Compose profiles require
+their generated credentials. On an existing Mythic database volume, bootstrap
+stops if the Mythic credentials are absent from `.env`; restore the credentials
+that match that volume before continuing.
 
 ### Point it at your network
 
@@ -107,7 +113,7 @@ matching `.env` lines.
 | **`havoc`** | Havoc teamserver (C++ Demon evasion payload) | 80 | 40056 (Qt GUI) | HTTP / HTTPS / SMB |
 | **`sliver`** | Sliver teamserver (Go implant + extensions) | 80 | 31337 (CLI / RPC) | mTLS / WireGuard / HTTP / DNS |
 | **`adaptix`** | Adaptix teamserver (Multiplayer Go + Qt GUI) | 80 | 4321 (Qt GUI) | HTTP/S / DNS / SMB / TCP Gopher |
-| **`mythic`** | Mythic core: server + postgres + rabbitmq | 80 | 7443 (Web UI/API) | http C2 profile via mythic-cli (Linux host) |
+| **`mythic`** | Mythic core: server + postgres + rabbitmq | 80 | 7443 (REST API) | HTTP C2 profile via sibling container |
 
 ---
 
@@ -119,7 +125,7 @@ matching `.env` lines.
 
 C2Stack ships with an integrated web management and educational portal:
 - **Container Stack Controller**: Real-time health monitoring and 1-click lifecycle controls (start, stop, restart, logs) for all 6 containers via Docker socket integration.
-- **Live OPSEC Redirector Visualizer**: Interactive packet flow tracing verifying `X-Request-ID: cadre-c2` routing into `c2_core` vs. scanner redirection to the **CloudEdge CDN Decoy Page**.
+- **Live Redirector Visualizer**: Interactive packet flow tracing showing how a matching configured header and URI prefix route a request to a framework service, while a request without the configured header receives the **CloudEdge CDN Decoy Page**. The header is a routing gate, not operator authentication.
 - **Meridian DNS Covert Channel Dissector**: Educational waterfall showing Base32 chunking (RFC 1035 labels), sequence tracking, and wire encryption over UDP 5353.
 - **Cross-Framework Payload Studio**: One-click copy for PowerShell stagers, bash commands, and binary compilations across all 5 frameworks with detection metadata (Sysmon Event IDs, Sigma signatures).
 - **Active Fleet Radar**: Unified live session table aggregating active beacons across Meridian, Sliver, and Havoc.

@@ -12,7 +12,11 @@ func (ts *Teamserver) TsTaskRunningExists(agentId string, taskId string) bool {
 }
 
 func (ts *Teamserver) TsTaskCreate(agentId string, cmdline string, client string, taskData adaptix.TaskData) {
-	ts.TaskManager.Create(agentId, cmdline, client, taskData)
+	_ = ts.TaskManager.Create(agentId, cmdline, client, taskData)
+}
+
+func (ts *Teamserver) TsTaskCreateWithID(agentId string, cmdline string, client string, taskData adaptix.TaskData) string {
+	return ts.TaskManager.Create(agentId, cmdline, client, taskData)
 }
 
 func (ts *Teamserver) TsTaskUpdate(agentId string, updateData adaptix.TaskData) {

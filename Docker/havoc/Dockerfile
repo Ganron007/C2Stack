@@ -1,7 +1,7 @@
 # ---- Build stage: compile Havoc teamserver from vendored in-tree source ----
 # Source: Docker/havoc/src (vendored upstream HavocFramework/Havoc, GPL-3.0).
 # No git clone / network downloads at build time (Go module downloads only).
-FROM golang:1.21-bookworm AS builder
+FROM golang:1.25.14-bookworm@sha256:3b4a11519ad929d1e1d261a12cff056f0c85b735253d7d861346b9c6f8b36437 AS builder
 
 RUN apt-get update -qq \
     && apt-get install -y -qq --no-install-recommends \
@@ -21,11 +21,12 @@ COPY src/ .
 RUN make dev-ts-compile
 
 # ---- Runtime stage ----
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
 
 RUN apt-get update -qq \
     && apt-get install -y -qq --no-install-recommends \
         ca-certificates \
+        mingw-w64 \
         wget \
         tar \
         nasm \
@@ -46,11 +47,8 @@ COPY --from=builder /src/havoc ./havoc
 # DB dir used by the teamserver.
 COPY havoc.yaotl ./data/havoc.yaotl
 RUN mkdir -p /opt/havoc/teamserver/data \
-    && wget -q https://musl.cc/x86_64-w64-mingw32-cross.tgz -O /tmp/mingw64.tgz \
-    && wget -q https://musl.cc/i686-w64-mingw32-cross.tgz -O /tmp/mingw32.tgz \
-    && tar zxf /tmp/mingw64.tgz -C /opt/havoc/teamserver/data \
-    && tar zxf /tmp/mingw32.tgz -C /opt/havoc/teamserver/data \
-    && rm -f /tmp/mingw64.tgz /tmp/mingw32.tgz
+    && command -v x86_64-w64-mingw32-gcc \
+    && command -v i686-w64-mingw32-gcc
 
 # REQUIRED for payload generation: the teamserver compiles Demon payloads
 # SERVER-SIDE (not in the Qt client). builder.go reads
@@ -73,5 +71,5 @@ COPY entrypoint.sh /usr/local/bin/havoc-entrypoint.sh
 RUN chmod +x /usr/local/bin/havoc-entrypoint.sh
 
 # Havoc teamserver v0.7 CLI. `-d` runs the default profile
-# (./data/havoc.yaotl, operators 5pider/Neo, password password1234).
+# (./data/havoc.yaotl, operators 5pider/Neo, per-deployment password from env).
 ENTRYPOINT ["/usr/local/bin/havoc-entrypoint.sh"]

@@ -59,6 +59,7 @@ func (t *Teamserver) DispatchEvent(pk packager.Package) {
 				logger.Debug("AgentID [" + agentID + "] not found")
 				return
 			}
+			TaskID, _ := pk.Body.Info["TaskID"].(string)
 
 			for i := range t.Agents.Agents {
 
@@ -74,7 +75,7 @@ func (t *Teamserver) DispatchEvent(pk packager.Package) {
 							Console = func(AgentID string, Message map[string]string) {
 								var (
 									out, _ = json.Marshal(Message)
-									pk     = events.Demons.DemonOutput(DemonID, agent.HAVOC_CONSOLE_MESSAGE, string(out))
+									pk     = events.Demons.DemonOutput(DemonID, agent.HAVOC_CONSOLE_MESSAGE, string(out), TaskID)
 								)
 
 								t.EventAppend(pk)

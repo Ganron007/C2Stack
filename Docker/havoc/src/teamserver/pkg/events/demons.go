@@ -18,57 +18,57 @@ var Demons demons
 
 func (demons) NewDemon(Agent *agent.Agent) packager.Package {
 	var (
-		Package    packager.Package
+		Package packager.Package
 	)
 
-	Package.Head.Event   = packager.Type.Session.Type
-	Package.Head.Time    = time.Now().Format("02/01/2006 15:04:05")
+	Package.Head.Event = packager.Type.Session.Type
+	Package.Head.Time = time.Now().Format("02/01/2006 15:04:05")
 	Package.Head.OneTime = "true"
 
 	Package.Body.SubEvent = packager.Type.Session.NewSession
 	Package.Body.Info = make(map[string]interface{})
 
 	InfoMap := map[string]interface{}{
-		"Active": fmt.Sprintf("%v", Agent.Active),
+		"Active":          fmt.Sprintf("%v", Agent.Active),
 		"BackgroundCheck": Agent.BackgroundCheck,
-		"DomainName": Agent.Info.DomainName,
-		"Elevated": Agent.Info.Elevated,
+		"DomainName":      Agent.Info.DomainName,
+		"Elevated":        Agent.Info.Elevated,
 		"Encryption": map[string]interface{}{
 			"AESKey": base64.StdEncoding.EncodeToString(Agent.Encryption.AESKey),
 			"AESIv":  base64.StdEncoding.EncodeToString(Agent.Encryption.AESIv),
 		},
-		"InternalIP": Agent.Info.InternalIP,
-		"ExternalIP": Agent.Info.ExternalIP,
+		"InternalIP":  Agent.Info.InternalIP,
+		"ExternalIP":  Agent.Info.ExternalIP,
 		"FirstCallIn": Agent.Info.FirstCallIn,
-		"LastCallIn": Agent.Info.LastCallIn,
-		"Hostname": Agent.Info.Hostname,
-		"Listener": "null", // ?
-		"MagicValue": fmt.Sprintf("%x", Agent.Info.MagicValue),
-		"NameID": Agent.NameID,
-		"OSArch": Agent.Info.OSArch,
-		"OSBuild": Agent.Info.OSBuild,
-		"OSVersion": Agent.Info.OSVersion,
+		"LastCallIn":  Agent.Info.LastCallIn,
+		"Hostname":    Agent.Info.Hostname,
+		"Listener":    "null", // ?
+		"MagicValue":  fmt.Sprintf("%x", Agent.Info.MagicValue),
+		"NameID":      Agent.NameID,
+		"OSArch":      Agent.Info.OSArch,
+		"OSBuild":     Agent.Info.OSBuild,
+		"OSVersion":   Agent.Info.OSVersion,
 		"Pivots": map[string]interface{}{
 			"Parent": nil,
 			"Links":  []string{},
 		},
-		"PortFwds": []string{},
-		"ProcessArch": Agent.Info.ProcessArch,
-		"ProcessName": Agent.Info.ProcessName,
-		"ProcessPID": fmt.Sprintf("%d", Agent.Info.ProcessPID),
-		"ProcessPPID": fmt.Sprintf("%d", Agent.Info.ProcessPPID),
-		"ProcessPath": Agent.Info.ProcessPath,
-		"Reason": Agent.Reason,
-		"SleepDelay": Agent.Info.SleepDelay,
-		"SleepJitter": Agent.Info.SleepJitter,
-		"KillDate": Agent.Info.KillDate,
+		"PortFwds":     []string{},
+		"ProcessArch":  Agent.Info.ProcessArch,
+		"ProcessName":  Agent.Info.ProcessName,
+		"ProcessPID":   fmt.Sprintf("%d", Agent.Info.ProcessPID),
+		"ProcessPPID":  fmt.Sprintf("%d", Agent.Info.ProcessPPID),
+		"ProcessPath":  Agent.Info.ProcessPath,
+		"Reason":       Agent.Reason,
+		"SleepDelay":   Agent.Info.SleepDelay,
+		"SleepJitter":  Agent.Info.SleepJitter,
+		"KillDate":     Agent.Info.KillDate,
 		"WorkingHours": Agent.Info.WorkingHours,
-		"SocksCli": []string{},
-		"SocksCliMtx": nil,
-		"SocksSvr": []string{},
-		"TaskedOnce": Agent.TaskedOnce,
-		"Username": Agent.Info.Username,
-		"PivotParent": "",
+		"SocksCli":     []string{},
+		"SocksCliMtx":  nil,
+		"SocksSvr":     []string{},
+		"TaskedOnce":   Agent.TaskedOnce,
+		"Username":     Agent.Info.Username,
+		"PivotParent":  "",
 	}
 
 	if Agent.Pivots.Parent != nil {
@@ -80,7 +80,7 @@ func (demons) NewDemon(Agent *agent.Agent) packager.Package {
 	return Package
 }
 
-func (demons) DemonOutput(DemonID string, CommandID int, Output string) packager.Package {
+func (demons) DemonOutput(DemonID string, CommandID int, Output string, TaskIDs ...string) packager.Package {
 	var Package packager.Package
 	var LogrOut map[string]string
 
@@ -98,6 +98,16 @@ func (demons) DemonOutput(DemonID string, CommandID int, Output string) packager
 	Package.Body.Info["DemonID"] = DemonID
 	Package.Body.Info["CommandID"] = strconv.Itoa(CommandID)
 	Package.Body.Info["Output"] = base64.StdEncoding.EncodeToString([]byte(Output))
+	taskID := ""
+	if len(TaskIDs) > 0 {
+		taskID = TaskIDs[0]
+	}
+	if taskID == "" && err == nil {
+		taskID = LogrOut["TaskID"]
+	}
+	if taskID != "" {
+		Package.Body.Info["TaskID"] = taskID
+	}
 
 	return Package
 }
